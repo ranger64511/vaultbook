@@ -39,7 +39,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 | Area | What it does |
 |---|---|
 | **Statement import** | CSV, OFX/QFX, and PDF. Columns are auto-detected, rows are previewed before saving, duplicates are skipped, and any import can be undone. Credit card PDFs also fill in balance, minimum payment, APR, credit limit, and due date. |
-| **Transactions** | Search, filter by account, category, or month, and group by **month**, **week**, or **day** with money-in and money-out totals. Re-categorize a transaction and Vault Book can remember the merchant for next time. |
+| **Transactions** | Search and filter by account or category. View one **day**, **week**, or **month** at a time (opening on today, this week, or this month, with arrows to step back and forward), or **all** transactions, with money-in and money-out totals. Re-categorize a transaction and Vault Book can remember the merchant for next time. |
 | **Accounts** | Checking, savings, money market, CDs, cash, and credit cards. Enter a savings APY and Vault Book estimates interest per month and year, the balance including interest to date, and a CD's value at maturity. |
 | **Dashboard** | Total card debt and utilization, 12-month income vs. spending, weekly needs vs. wants, top spending categories, and recent activity. |
 | **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Plan to cancel* or *Keep*. Pick the month you expect each one to stop and see your planned savings month by month. **Planning only: Vault Book never cancels anything.** |

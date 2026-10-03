@@ -1,36 +1,98 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Trash2, ReceiptText, Download } from 'lucide-react';
+import { Plus, Search, Trash2, ReceiptText, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Amount, Modal, Segmented, CategorySelect } from '../components/ui.jsx';
-import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate, dayLabel } from '../lib/format.js';
+import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate, dayLabel, toDate } from '../lib/format.js';
 import { kindOf } from '../lib/analytics.js';
 
 const PAGE = 400;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
 
+// Period views: each shows a single day/week/month that can be stepped through.
+const VIEWS = [
+  { value: 'day', label: 'Day' },
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'all', label: 'All' },
+];
+// Rows inside a period are sub-grouped one level finer.
+const SUBGROUP = { day: 'none', week: 'day', month: 'week', all: 'month' };
+
+const addDays = (iso, n) => { const d = toDate(iso); d.setDate(d.getDate() + n); return isoDate(d); };
+const monthEnd = (iso) => { const d = toDate(iso); return isoDate(new Date(d.getFullYear(), d.getMonth() + 1, 0)); };
+
+function periodRange(view, anchor) {
+  if (view === 'day') return [anchor, anchor];
+  if (view === 'week') { const s = weekKey(anchor); return [s, addDays(s, 6)]; }
+  if (view === 'month') return [`${anchor.slice(0, 7)}-01`, monthEnd(anchor)];
+  return null;
+}
+
+function shiftPeriod(view, anchor, dir) {
+  if (view === 'day') return addDays(anchor, dir);
+  if (view === 'week') return addDays(anchor, 7 * dir);
+  const d = toDate(`${anchor.slice(0, 7)}-01`);
+  return isoDate(new Date(d.getFullYear(), d.getMonth() + dir, 1));
+}
+
+function periodTitle(view, anchor, today) {
+  const current = periodRange(view, today)?.[0] === periodRange(view, anchor)?.[0];
+  if (view === 'day') return current ? `Today · ${dayLabel(anchor)}` : dayLabel(anchor);
+  if (view === 'week') return `${current ? 'This week' : 'Week'} · ${weekLabel(weekKey(anchor))}`;
+  return `${monthLabel(anchor.slice(0, 7), 'long')}${current ? ' · this month' : ''}`;
+}
+
+const readView = () => {
+  try { return VIEWS.some((v) => v.value === localStorage.getItem('tx-view')) ? localStorage.getItem('tx-view') : 'month'; } catch { return 'month'; }
+};
+
 export default function Transactions() {
   const { data, accountsById, mutate } = useData();
+  const today = isoDate(new Date());
   const [q, setQ] = useState('');
   const [account, setAccount] = useState('');
   const [category, setCategory] = useState('');
-  const [month, setMonth] = useState('');
-  const [group, setGroup] = useState('month');
+  const [view, setViewState] = useState(readView);
+  const [anchor, setAnchor] = useState(today);
   const [limit, setLimit] = useState(PAGE);
   const [adding, setAdding] = useState(false);
   const [ruleAsk, setRuleAsk] = useState(null);
-
-  const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [data.transactions]);
   const kind = kindOf(data.categories);
 
-  const filtered = useMemo(() => {
+  const setView = (v) => {
+    setViewState(v);
+    setLimit(PAGE);
+    try { localStorage.setItem('tx-view', v); } catch { /* storage unavailable */ }
+  };
+  const range = periodRange(view, anchor);
+  const isCurrent = view === 'all' || periodRange(view, today)[0] === range[0];
+  const group = SUBGROUP[view];
+
+  // Search + account + category filters, before narrowing to the period.
+  const matching = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return data.transactions
       .filter((t) => (!account || t.accountId === account) && (!category || t.category === category) &&
-        (!month || t.date.startsWith(month)) &&
         (!needle || t.description.toLowerCase().includes(needle) || t.notes?.toLowerCase().includes(needle) || String(Math.abs(t.amount)).includes(needle)))
       .sort((a, b) => b.date.localeCompare(a.date) || a.description.localeCompare(b.description));
-  }, [data.transactions, q, account, category, month]);
+  }, [data.transactions, q, account, category]);
+
+  const filtered = useMemo(
+    () => (range ? matching.filter((t) => t.date >= range[0] && t.date <= range[1]) : matching),
+    [matching, range?.[0], range?.[1]], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const periodTotals = useMemo(() => filtered.reduce((s, t) => {
+    if (kind(t.category) !== 'transfer') { if (t.amount > 0) s.in += t.amount; else s.out -= t.amount; }
+    return s;
+  }, { in: 0, out: 0 }), [filtered, kind]);
+
+  // Nearest activity before/after this period, to jump to when it's empty.
+  // `matching` is sorted newest first.
+  const earlier = range && matching.find((t) => t.date < range[0])?.date;
+  const later = range && matching.findLast((t) => t.date > range[1])?.date;
+  const filtersOn = !!(q.trim() || account || category);
 
   const groups = useMemo(() => {
     const out = [];
@@ -63,7 +125,7 @@ export default function Transactions() {
 
   return (
     <>
-      <PageHead title="Transactions" subtitle={`${filtered.length.toLocaleString()} transactions`}>
+      <PageHead title="Transactions" subtitle={`${filtered.length.toLocaleString()} transaction${filtered.length === 1 ? '' : 's'}${view === 'all' ? '' : ` in this ${view}`}`}>
         <a className="btn" href="/api/export.csv" download><Download size={16} /> Export CSV</a>
         <button className="btn primary" onClick={() => setAdding(true)} disabled={!data.accounts.length}><Plus size={16} /> Add</button>
       </PageHead>
@@ -74,21 +136,43 @@ export default function Transactions() {
             <Search size={16} style={{ position: 'absolute', left: 11, top: 10, color: 'var(--text-3)' }} />
             <input type="search" placeholder="Search description, notes or amount" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', paddingLeft: 34 }} aria-label="Search" />
           </div>
-          <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
-            <option value="">All months</option>
-            {months.map((m) => <option key={m} value={m}>{monthLabel(m, 'long')}</option>)}
-          </select>
           <select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Account">
             <option value="">All accounts</option>
             {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
           <CategorySelect categories={data.categories} value={category} onChange={setCategory} includeAll />
-          <Segmented label="Group by" value={group} onChange={setGroup} options={[{ value: 'month', label: 'Month' }, { value: 'week', label: 'Week' }, { value: 'day', label: 'Day' }, { value: 'none', label: 'None' }]} />
+          <Segmented label="View" value={view} onChange={setView} options={VIEWS} />
         </div>
 
+        {view !== 'all' && (
+          <div className="spread period-bar">
+            <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+              <button className="btn icon sm" aria-label={`Previous ${view}`} title={`Previous ${view}`} onClick={() => setAnchor((a) => shiftPeriod(view, a, -1))}><ChevronLeft size={16} /></button>
+              <button className="btn icon sm" aria-label={`Next ${view}`} title={`Next ${view}`} disabled={isCurrent} onClick={() => setAnchor((a) => shiftPeriod(view, a, 1))}><ChevronRight size={16} /></button>
+              <h2 style={{ marginLeft: 6 }}>{periodTitle(view, anchor, today)}</h2>
+              {!isCurrent && <button className="btn ghost sm" onClick={() => setAnchor(today)}>Today</button>}
+            </div>
+            <div className="num" style={{ fontSize: 13 }}>
+              <span className="pos">+{money(periodTotals.in)}</span><span className="faint"> in · </span>
+              <span>−{money(periodTotals.out)}</span><span className="faint"> out</span>
+            </div>
+          </div>
+        )}
+
         {!filtered.length ? (
-          <Empty icon={ReceiptText} title="No transactions" action={!data.transactions.length && <Link className="btn primary" to="/import">Import a statement</Link>}>
-            {data.transactions.length ? 'Nothing matches these filters.' : 'Import a statement to see transactions here.'}
+          <Empty icon={ReceiptText} title={data.transactions.length ? (view === 'all' ? 'No transactions' : `Nothing ${view === 'day' ? (isCurrent ? 'today' : 'on this day') : `in this ${view}`}`) : 'No transactions'}
+            action={!data.transactions.length
+              ? <Link className="btn primary" to="/import">Import a statement</Link>
+              : view !== 'all' && (earlier || later) && (
+                <div className="row" style={{ justifyContent: 'center' }}>
+                  {earlier && <button className="btn" onClick={() => setAnchor(earlier)}><ChevronLeft size={16} /> Earlier activity ({shortDate(earlier)})</button>}
+                  {later && <button className="btn" onClick={() => setAnchor(later)}>Later activity ({shortDate(later)}) <ChevronRight size={16} /></button>}
+                  <button className="btn ghost" onClick={() => setView('all')}>Show all</button>
+                </div>
+              )}>
+            {!data.transactions.length ? 'Import a statement to see transactions here.'
+              : !matching.length ? 'Nothing matches these filters.'
+              : `No transactions ${filtersOn ? 'match your filters ' : ''}${view === 'day' ? 'on this day' : `in this ${view}`}.`}
           </Empty>
         ) : (
           <div className="table-wrap">
