@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ArrowDownRight, ArrowUpRight, CreditCard, Repeat, Upload, Wallet, TrendingDown } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Amount } from '../components/ui.jsx';
+import MonthPicker from '../components/MonthPicker.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
 import { useChartColors } from '../lib/theme.js';
 import { byCategory, byPeriod, detectRecurring, lastNMonths, summarize } from '../lib/analytics.js';
@@ -14,8 +15,7 @@ export default function Dashboard() {
   const c = useChartColors();
   const txs = data.transactions;
 
-  const latestMonth = useMemo(() => txs.reduce((m, t) => (t.date.slice(0, 7) > m ? t.date.slice(0, 7) : m), '') || currentMonth(), [txs]);
-  const [month, setMonth] = useState(latestMonth);
+  const [month, setMonth] = useState(currentMonth);
   const months = useMemo(() => [...new Set(txs.map((t) => t.date.slice(0, 7)))].sort().reverse(), [txs]);
 
   const monthTx = useMemo(() => txs.filter((t) => t.date.startsWith(month)), [txs, month]);
@@ -58,22 +58,20 @@ export default function Dashboard() {
   return (
     <>
       <PageHead title="Dashboard" subtitle={`Overview for ${monthLabel(month, 'long')}`}>
-        <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
-          {(months.length ? months : [month]).map((m) => <option key={m} value={m}>{monthLabel(m, 'long')}</option>)}
-        </select>
+        <MonthPicker value={month} onChange={setMonth} months={months} />
       </PageHead>
 
       <div className="grid g-4">
         <Stat icon={CreditCard} label="Credit card debt" value={money(debt)}
           sub={limit ? `${pct((debt / limit) * 100)} of ${money0(limit)} limit used` : `${cards.length} card${cards.length === 1 ? '' : 's'}`} />
-        <Stat icon={Wallet} label="Spent this month" value={money(cur.spending)}
+        <Stat icon={Wallet} label={month === currentMonth() ? "Spent this month" : `Spent in ${monthLabel(month, "long")}`} value={money(cur.spending)}
           sub={prev.spending ? (
             <span className="row" style={{ gap: 4 }}>
               {delta > 0 ? <ArrowUpRight size={14} className="bad" /> : <ArrowDownRight size={14} className="pos" />}
               <span className={delta > 0 ? 'bad' : 'pos'}>{money0(Math.abs(delta))}</span> {delta > 0 ? 'more' : 'less'} than last month
             </span>
           ) : `Needs ${money0(cur.needs)} · Wants ${money0(cur.wants)}`} />
-        <Stat icon={TrendingDown} label="Income this month" value={money(cur.income)}
+        <Stat icon={TrendingDown} label={month === currentMonth() ? "Income this month" : `Income in ${monthLabel(month, "long")}`} value={money(cur.income)}
           sub={<>Net <span className={cur.net >= 0 ? 'pos' : 'bad'}>{cur.net >= 0 ? '+' : ''}{money0(cur.net)}</span></>} />
         <Stat icon={Repeat} label="Recurring charges" value={`${money0(recurringMonthly)}/mo`}
           sub={flagged.length ? <span className="pos">{money0(savings)}/mo planned to cancel</span> : `${recurring.length} active subscriptions & bills`} />
