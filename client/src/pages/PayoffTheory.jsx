@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { FlaskConical, Plus, Trash2, CalendarCheck, Flame, Coins, Sparkles, RotateCcw, CheckCircle2, AlertTriangle, Target, Copy, Check, Loader2 } from 'lucide-react';
+import { FlaskConical, Plus, Trash2, CalendarCheck, Flame, Coins, Sparkles, RotateCcw, CheckCircle2, AlertTriangle, Target, Copy, Check, Loader2, Pencil } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented, Modal } from '../components/ui.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
@@ -60,6 +60,7 @@ export default function PayoffTheory() {
   });
   const [status, setStatus] = useState(book.dirty ? 'saving' : 'saved');
   const [applying, setApplying] = useState(false);
+  const [editing, setEditing] = useState(null); // { mode: 'add' | 'edit', item } for the extra-payment popup
   const draft = book.list.find((t) => t.id === book.activeId) || book.list[0];
 
   const change = (fn) => setBook((b) => ({ ...fn(b), dirty: true }));
@@ -132,16 +133,29 @@ export default function PayoffTheory() {
   const cardName = (id) => cards.find((a) => a.id === id)?.name;
   const update = (id, patch) => setDraft((d) => ({ ...d, adjustments: d.adjustments.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
   const remove = (id) => setDraft((d) => ({ ...d, adjustments: d.adjustments.filter((a) => a.id !== id) }));
-  const add = (kind) => setDraft((d) => ({
-    ...d,
-    adjustments: [...d.adjustments, {
+  const add = (kind) => setEditing({ mode: 'add', item: {
       bonus: { id: newId(), type: 'lump', source: 'bonus', amount: 2000, percent: 50, month: addMonths(firstPay, 2), repeat: 'yearly', endMonth: null, target: null },
       raise: { id: newId(), type: 'increase', source: 'raise', amount: 200, percent: 100, month: addMonths(firstPay, 3), endMonth: null },
       lump: { id: newId(), type: 'lump', source: 'lump', amount: 1000, percent: 100, month: addMonths(firstPay, 2), repeat: 'none', target: null },
       increase: { id: newId(), type: 'increase', source: 'increase', amount: 100, percent: 100, month: firstPay, endMonth: null },
       withdraw: { id: newId(), type: 'lump', source: 'withdraw', fromAccount: investments[0]?.id, amount: Math.min(5000, Math.round(investments[0]?.balance || 0)), month: addMonths(firstPay, 1), repeat: 'none', target: null },
-    }[kind]],
-  }));
+    }[kind] });
+  const saveExtra = () => {
+    const { mode, item } = editing;
+    setDraft((d) => ({
+      ...d,
+      adjustments: mode === 'add' ? [...d.adjustments, item] : d.adjustments.map((x) => (x.id === item.id ? item : x)),
+    }));
+    setEditing(null);
+  };
+  const extraProblem = (a) => {
+    if (!a) return null;
+    if (!(Number(a.amount) > 0)) return 'Enter an amount.';
+    if (!a.month) return 'Pick a month.';
+    if (a.source === 'withdraw' && !withdrawalInfo(a, accounts)) return 'Pick the investment account.';
+    if (a.endMonth && a.endMonth < a.month) return 'The end month is before the start month.';
+    return null;
+  };
   const resetToMain = () => {
     if (!confirm(`Reset “${draft.name}” to match your main plan? Its extra payments will be replaced.`)) return;
     setDraft((t) => ({ ...t, budget: main.budget, strategy: main.strategy, adjustments: cloneAdjustments(main.adjustments) }));
@@ -257,10 +271,10 @@ export default function PayoffTheory() {
               a one-time <b>lump sum</b> like a tax refund, or a <b>monthly increase</b> like money freed from cancelled subscriptions.
             </p>
           ) : (
-            <div className="stack" style={{ gap: 10, marginTop: 10 }}>
+            <div className="stack" style={{ gap: 6, marginTop: 10 }}>
               {draft.adjustments.map((a) => (
-                <ExtraEditor key={a.id} a={a} debts={cards} investments={investments} accounts={accounts} strategy={draft.strategy} firstPay={firstPay}
-                  onChange={(patch) => update(a.id, patch)} onRemove={() => remove(a.id)} />
+                <ExtraSummary key={a.id} a={a} cardName={cardName} accounts={accounts} firstPay={firstPay}
+                  onEdit={() => setEditing({ mode: 'edit', item: { ...a } })} onRemove={() => remove(a.id)} />
               ))}
             </div>
           )}
@@ -339,6 +353,21 @@ export default function PayoffTheory() {
       </Card>
 
       <PayoffSchedule plan={theory} cards={cards} title="Theory month by month" />
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} width={720}
+        title={editing ? `${editing.mode === 'add' ? 'Add' : 'Edit'} ${(EXTRA_KINDS.find((k) => k.value === kindOfAdjustment(editing.item))?.label || 'extra payment').toLowerCase()}` : ''}
+        footer={<>
+          {extraProblem(editing?.item) && <span className="bad" style={{ marginRight: 'auto', fontSize: 13 }}>{extraProblem(editing?.item)}</span>}
+          <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="btn primary" disabled={!!extraProblem(editing?.item)} onClick={saveExtra}>
+            <Check size={16} /> {editing?.mode === 'add' ? 'Add to theory' : 'Save changes'}
+          </button>
+        </>}>
+        {editing && (
+          <ExtraEditor a={editing.item} debts={cards} investments={investments} accounts={accounts} strategy={draft.strategy} firstPay={firstPay}
+            onChange={(patch) => setEditing((e) => ({ ...e, item: { ...e.item, ...patch } }))} />
+        )}
+      </Modal>
 
       <Modal open={applying} onClose={() => setApplying(false)} title="Apply theory to your main plan?"
         footer={<>
@@ -431,7 +460,7 @@ function ExtraEditor({ a, debts, investments, accounts, strategy, firstPay, onCh
           </select>
         </div>
       )}
-      <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>
+      {onRemove && <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>}
       <div className="extra-note faint">
         {meta.hint}{' '}
         {Number(a.amount) > 0 && pct < 100 && <b>{`$${towardDebt(a).toLocaleString('en-US', { maximumFractionDigits: 2 })}${lump ? '' : '/mo'} goes to debt.`}</b>}
@@ -472,7 +501,7 @@ function WithdrawEditor({ a, debts, investments, accounts, strategy, firstPay, o
           {debts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
-      <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>
+      {onRemove && <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>}
       <div className="extra-note faint">
         {w ? (
           <>
@@ -554,5 +583,20 @@ function InvestmentImpact({ accounts, draft, theory, without, colors: c }) {
         and money in them may be protected in ways cash isn’t. Keep an emergency fund. This is an estimate to help you think it through, not financial or tax advice.
       </p>
     </Card>
+  );
+}
+
+/** One line per extra payment in the theory, with Edit and Delete. */
+function ExtraSummary({ a, cardName, accounts, firstPay, onEdit, onRemove }) {
+  const kind = kindOfAdjustment(a);
+  const label = EXTRA_KINDS.find((k) => k.value === kind)?.label || 'Extra';
+  const past = a.month < firstPay && (a.type === 'lump' && (!a.repeat || a.repeat === 'none'));
+  return (
+    <div className="extra-summary">
+      <span className={`badge ${kind === 'withdraw' ? 'warn' : a.type === 'lump' ? 'income' : 'need'}`}>{label}</span>
+      <span className="grow">{describeAdjustment(a, cardName, accounts).replace(/^[^:]+:\s*/, '')}{past && <span className="bad"> · in the past, ignored</span>}</span>
+      <button className="btn ghost sm" onClick={onEdit}><Pencil size={14} /> Edit</button>
+      <button className="btn ghost icon sm" aria-label="Delete" title="Delete" onClick={onRemove}><Trash2 size={14} /></button>
+    </div>
   );
 }

@@ -263,3 +263,6 @@ tr.selected-row td { background: var(--accent-soft); }
 .extra-row input, .extra-row select { height: 32px; }
 .extra-row input[type='month'] { width: 150px; }
 .extra-note { flex-basis: 100%; }
+.extra-summary { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13.5px; }
+.extra-summary .badge { flex: none; }
+dialog.modal .extra-row { border: 0; padding: 0; background: transparent; }
