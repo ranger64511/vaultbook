@@ -17,6 +17,12 @@ const IDLE_MS = 30 * 60 * 1000;
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
 const COOKIE = 'vb_session';
 
+/** Today's date in the computer's own time zone, as YYYY-MM-DD. */
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 // ---------------------------------------------------------------- state ---
 // The decrypted data key and vault contents exist only in memory while unlocked.
 const state = { dek: null, data: null, username: null };
@@ -205,21 +211,24 @@ app.use('/api', (req, res, next) => (req.path.startsWith('/auth/') ? next() : re
 
 app.get('/api/data', (req, res) => res.json(state.data));
 
-const ACCOUNT_FIELDS = ['name', 'type', 'institution', 'balance', 'apr', 'minPayment', 'creditLimit', 'dueDay', 'last4'];
+const ACCOUNT_TYPES = ['checking', 'savings', 'money-market', 'cd', 'cash', 'other', 'credit'];
+const ACCOUNT_FIELDS = ['name', 'type', 'institution', 'balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'last4', 'maturityDate'];
 function pickAccount(body) {
   const a = {};
   for (const k of ACCOUNT_FIELDS) if (body[k] !== undefined) a[k] = body[k];
-  for (const k of ['balance', 'apr', 'minPayment', 'creditLimit', 'dueDay']) {
-    if (a[k] !== undefined) a[k] = a[k] === '' || a[k] === null ? null : Number(a[k]);
+  for (const k of ['balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay']) {
+    if (a[k] !== undefined) a[k] = a[k] === '' || a[k] === null || !Number.isFinite(Number(a[k])) ? null : Number(a[k]);
   }
-  if (a.type && !['checking', 'savings', 'credit'].includes(a.type)) a.type = 'checking';
+  if (a.apy != null) a.apy = Math.min(100, Math.max(0, a.apy));
+  if (a.maturityDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(a.maturityDate || '')) a.maturityDate = null;
+  if (a.type && !ACCOUNT_TYPES.includes(a.type)) a.type = 'checking';
   return a;
 }
 
 app.post('/api/accounts', (req, res) => {
   const acct = { id: crypto.randomUUID(), type: 'checking', balance: 0, ...pickAccount(req.body || {}) };
   if (!acct.name) return res.status(400).json({ error: 'Name is required' });
-  acct.balanceAsOf = new Date().toISOString().slice(0, 10);
+  acct.balanceAsOf = localToday();
   state.data.accounts.push(acct);
   persist();
   res.json(acct);
@@ -229,7 +238,7 @@ app.put('/api/accounts/:id', (req, res) => {
   const acct = state.data.accounts.find((a) => a.id === req.params.id);
   if (!acct) return res.status(404).json({ error: 'Not found' });
   const patch = pickAccount(req.body || {});
-  if (patch.balance !== undefined && patch.balance !== acct.balance) acct.balanceAsOf = new Date().toISOString().slice(0, 10);
+  if (patch.balance !== undefined && patch.balance !== acct.balance) acct.balanceAsOf = localToday();
   Object.assign(acct, patch);
   persist();
   res.json(acct);
@@ -370,7 +379,7 @@ app.post('/api/import/commit', (req, res) => {
   if (statement) {
     if (Number.isFinite(statement.balance)) {
       acct.balance = acct.type === 'credit' ? Math.abs(statement.balance) : statement.balance;
-      acct.balanceAsOf = maxDate || new Date().toISOString().slice(0, 10);
+      acct.balanceAsOf = maxDate || localToday();
     }
     if (Number.isFinite(statement.minPayment)) acct.minPayment = statement.minPayment;
     if (Number.isFinite(statement.apr)) acct.apr = statement.apr;
@@ -472,7 +481,7 @@ app.put('/api/settings', (req, res) => {
 
 // --------------------------------------------------------------- export ---
 app.get('/api/backup', (req, res) => {
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localToday();
   res.set('Content-Disposition', `attachment; filename="vaultbook-backup-${stamp}.json"`);
   res.json({
     format: 'vaultbook-encrypted-backup',

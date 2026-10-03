@@ -5,6 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Amount, CategorySelect } from '../components/ui.jsx';
 import { AccountForm } from './Accounts.jsx';
 import { money, shortDate, longDate } from '../lib/format.js';
+import { typeLabel } from '../lib/accounts.js';
 
 export default function Import() {
   const { data, mutate, notify, accountsById } = useData();
@@ -89,7 +90,7 @@ export default function Import() {
             ) : (
               <div className="row">
                 <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={{ flex: 1 }} aria-label="Account">
-                  {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.type === 'credit' ? 'credit card' : a.type})</option>)}
+                  {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({typeLabel(a.type, true)})</option>)}
                 </select>
                 <button className="btn" onClick={() => setNewAccount(true)}>New account</button>
               </div>
