@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Wand2, Plus, Save, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Modal } from '../components/ui.jsx';
+import MonthPicker from '../components/MonthPicker.jsx';
 import { useChartColors, STATUS } from '../lib/theme.js';
 import { summarize } from '../lib/analytics.js';
 import { money0, monthLabel, addMonths, currentMonth, pct } from '../lib/format.js';
@@ -10,7 +11,7 @@ export default function Budget() {
   const { data, mutate } = useData();
   const c = useChartColors();
   const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [data.transactions]);
-  const [month, setMonth] = useState(months[0] || currentMonth());
+  const [month, setMonth] = useState(currentMonth);
   const [cats, setCats] = useState(data.categories);
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) setCats(data.categories); }, [data.categories, dirty]);
@@ -110,9 +111,7 @@ export default function Budget() {
   return (
     <>
       <PageHead title="Budget" subtitle="Set a monthly amount per category. Needs are essentials; wants are places to cut.">
-        <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
-          {(months.length ? months : [month]).map((m) => <option key={m} value={m}>{monthLabel(m, 'long')}</option>)}
-        </select>
+        <MonthPicker value={month} onChange={setMonth} months={months} />
         <button className="btn" onClick={suggest} title="Set each budget to your 3-month average"><Wand2 size={16} /> Suggest from history</button>
         <button className="btn" onClick={() => setAdding(true)}><Plus size={16} /> Category</button>
         <button className="btn primary" onClick={save} disabled={!dirty}><Save size={16} /> Save</button>
