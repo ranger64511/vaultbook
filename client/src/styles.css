@@ -247,3 +247,14 @@ tr.selected-row td { background: var(--accent-soft); }
 .compact-table th, .compact-table td { padding: 6px 6px; }
 .compact-table th:first-child, .compact-table td:first-child { padding-left: 0; }
 .compact-table input[type='month'] { width: 150px; }
+.theory-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; }
+.theory-tab { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; height: 32px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.theory-tab:hover { background: var(--surface-hover); color: var(--text); }
+.theory-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.save-status { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-3); }
+.save-status.saved { color: var(--good); }
+.save-status.error { color: var(--bad); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

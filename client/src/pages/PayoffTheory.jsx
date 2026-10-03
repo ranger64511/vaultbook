@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { FlaskConical, Plus, Trash2, CalendarCheck, Flame, Coins, Sparkles, Save, RotateCcw, CheckCircle2, AlertTriangle, Target } from 'lucide-react';
+import { FlaskConical, Plus, Trash2, CalendarCheck, Flame, Coins, Sparkles, RotateCcw, CheckCircle2, AlertTriangle, Target, Copy, Check, Loader2 } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented, Modal } from '../components/ui.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
@@ -13,11 +13,19 @@ import {
   firstPaymentMonth, describeAdjustment, totalExtra,
 } from '../lib/payoff.js';
 
-// The working theory survives page changes during this session (memory only, never stored unencrypted).
-let draftCache = null;
-
-const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `adj-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const cloneAdjustments = (list) => list.map((a) => ({ ...a, id: newId() }));
+const usable = (adjustments) => adjustments.filter((a) => Number(a.amount) > 0 && a.month);
+
+/** A new theory starts as a copy of the main plan. */
+const theoryFromMain = (main, name) => ({ id: newId(), name, budget: main.budget, strategy: main.strategy, adjustments: cloneAdjustments(main.adjustments) });
+const nextName = (list) => {
+  let n = list.length + 1;
+  while (list.some((t) => t.name === `Theory ${n}`)) n++;
+  return `Theory ${n}`;
+};
+const SAVE_DELAY = 700;
 
 export function PlanningOnlyNotice() {
   return (
@@ -40,12 +48,61 @@ export default function PayoffTheory() {
   const debtsKey = JSON.stringify(debts);
   const minTotal = minimumTotal(debts);
   const main = mainPlanSettings(data.settings, debts);
-  const scenarios = data.settings.payoffScenarios || [];
 
-  const [draft, setDraftState] = useState(() => draftCache || { ...main, adjustments: main.adjustments.map((a) => ({ ...a })), scenarioId: null });
-  const setDraft = (fn) => setDraftState((d) => { const next = typeof fn === 'function' ? fn(d) : fn; draftCache = next; return next; });
-  const [saving, setSaving] = useState(false);
+  // Every theory is kept in the encrypted vault and autosaved while you edit.
+  const [book, setBook] = useState(() => {
+    const saved = (data.settings.payoffScenarios || []).map((t) => ({ ...t, adjustments: t.adjustments.map((a) => ({ ...a })) }));
+    const list = saved.length ? saved : [theoryFromMain(main, 'Theory 1')];
+    const activeId = list.some((t) => t.id === data.settings.payoffActiveTheory) ? data.settings.payoffActiveTheory : list[0].id;
+    return { list, activeId, dirty: !saved.length };
+  });
+  const [status, setStatus] = useState(book.dirty ? 'saving' : 'saved');
   const [applying, setApplying] = useState(false);
+  const draft = book.list.find((t) => t.id === book.activeId) || book.list[0];
+
+  const change = (fn) => setBook((b) => ({ ...fn(b), dirty: true }));
+  const setDraft = (fn) => change((b) => ({ ...b, list: b.list.map((t) => (t.id === b.activeId ? (typeof fn === 'function' ? fn(t) : fn) : t)) }));
+
+  // Debounced autosave; anything still pending is flushed when you leave the page.
+  const pending = useRef(null);
+  const save = async (payload) => {
+    pending.current = null;
+    setStatus('saving');
+    try {
+      await mutate('/settings', { method: 'PUT', body: payload });
+      setStatus('saved');
+    } catch {
+      setStatus('error');
+    }
+  };
+  useEffect(() => {
+    if (!book.dirty) return undefined;
+    const payload = {
+      payoffScenarios: book.list.map((t) => ({ ...t, adjustments: usable(t.adjustments) })),
+      payoffActiveTheory: book.activeId,
+    };
+    pending.current = payload;
+    setStatus('unsaved');
+    const timer = setTimeout(() => save(payload), SAVE_DELAY);
+    return () => clearTimeout(timer);
+  }, [book]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // Closing or reloading the tab: send anything pending with a keepalive request.
+    const onHide = () => {
+      if (!pending.current) return;
+      fetch('/api/settings', {
+        method: 'PUT', keepalive: true, credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'vaultbook' },
+        body: JSON.stringify(pending.current),
+      }).catch(() => {});
+      pending.current = null;
+    };
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      if (pending.current) save(pending.current); // leaving the page within the app
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mainPlan = useMemo(() => runPlan(debts, main), [debtsKey, JSON.stringify(main)]); // eslint-disable-line react-hooks/exhaustive-deps
   const theory = useMemo(() => runPlan(debts, draft), [debtsKey, draft]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -71,27 +128,34 @@ export default function PayoffTheory() {
       ? { id: newId(), type, amount: 1000, month: addMonths(firstPay, 2), target: null }
       : { id: newId(), type, amount: 100, month: firstPay, endMonth: null }],
   }));
-  const resetToMain = () => setDraft({ ...main, adjustments: main.adjustments.map((a) => ({ ...a })), scenarioId: null });
-  const loadScenario = (id) => {
-    const sc = scenarios.find((s) => s.id === id);
-    if (sc) setDraft({ budget: sc.budget, strategy: sc.strategy, adjustments: sc.adjustments.map((a) => ({ ...a })), scenarioId: sc.id });
+  const resetToMain = () => {
+    if (!confirm(`Reset “${draft.name}” to match your main plan? Its extra payments will be replaced.`)) return;
+    setDraft((t) => ({ ...t, budget: main.budget, strategy: main.strategy, adjustments: cloneAdjustments(main.adjustments) }));
   };
+  const newTheory = () => change((b) => {
+    const t = theoryFromMain(main, nextName(b.list));
+    return { ...b, list: [...b.list, t], activeId: t.id };
+  });
+  const duplicateTheory = () => change((b) => {
+    const t = { ...draft, id: newId(), name: `${draft.name} (copy)`.slice(0, 80), adjustments: cloneAdjustments(draft.adjustments) };
+    return { ...b, list: [...b.list, t], activeId: t.id };
+  });
+  const deleteTheory = () => {
+    if (!confirm(`Delete “${draft.name}”? This can’t be undone.`)) return;
+    change((b) => {
+      const list = b.list.filter((t) => t.id !== b.activeId);
+      const kept = list.length ? list : [theoryFromMain(main, 'Theory 1')];
+      return { ...b, list: kept, activeId: kept[0].id };
+    });
+    notify('Theory deleted');
+  };
+  const selectTheory = (id) => change((b) => ({ ...b, activeId: id }));
 
-  const cleanDraft = { budget: draft.budget, strategy: draft.strategy, adjustments: draft.adjustments.filter((a) => Number(a.amount) > 0 && a.month) };
-  const changed = !sameJSON(cleanDraft, { budget: main.budget, strategy: main.strategy, adjustments: main.adjustments });
-  const activeScenario = scenarios.find((s) => s.id === draft.scenarioId);
-
-  const saveScenario = async (name, asNew) => {
-    const entry = { id: asNew || !activeScenario ? newId() : activeScenario.id, name, ...cleanDraft };
-    const list = asNew || !activeScenario ? [...scenarios, entry] : scenarios.map((s) => (s.id === entry.id ? entry : s));
-    await mutate('/settings', { method: 'PUT', body: { payoffScenarios: list } }, `Saved “${name}”`);
-    setDraft((d) => ({ ...d, scenarioId: entry.id }));
-  };
-  const deleteScenario = async () => {
-    if (!activeScenario || !confirm(`Delete the saved theory “${activeScenario.name}”?`)) return;
-    await mutate('/settings', { method: 'PUT', body: { payoffScenarios: scenarios.filter((s) => s.id !== activeScenario.id) } }, 'Theory deleted');
-    setDraft((d) => ({ ...d, scenarioId: null }));
-  };
+  const cleanDraft = { budget: draft.budget, strategy: draft.strategy, adjustments: usable(draft.adjustments) };
+  const changed = !sameJSON(
+    { ...cleanDraft, adjustments: cleanDraft.adjustments.map(({ id, ...a }) => a) },
+    { budget: main.budget, strategy: main.strategy, adjustments: main.adjustments.map(({ id, ...a }) => a) },
+  );
   const apply = async () => {
     await mutate('/settings', { method: 'PUT', body: { payoffBudget: cleanDraft.budget, payoffStrategy: cleanDraft.strategy, payoffAdjustments: cleanDraft.adjustments } });
     setApplying(false);
@@ -116,23 +180,41 @@ export default function PayoffTheory() {
   return (
     <>
       <PageHead title="Payoff theory" subtitle="Try “what if” ideas, like lump sums or paying more, and see how they change your main plan. Nothing changes until you apply it.">
-        {scenarios.length > 0 && (
-          <select value={draft.scenarioId || ''} onChange={(e) => (e.target.value ? loadScenario(e.target.value) : resetToMain())} aria-label="Saved theories">
-            <option value="">Saved theories…</option>
-            {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        <button className="btn" onClick={resetToMain} title="Start over from your main plan"><RotateCcw size={16} /> Reset to main plan</button>
-        <button className="btn" onClick={() => setSaving(true)}><Save size={16} /> Save theory</button>
         <button className="btn primary" disabled={!changed} onClick={() => setApplying(true)}><CheckCircle2 size={16} /> Apply to main plan</button>
       </PageHead>
+
+      <div className="theory-tabs" role="tablist" aria-label="Your theories">
+        {book.list.map((t) => (
+          <button key={t.id} role="tab" aria-selected={t.id === draft.id} className={`theory-tab${t.id === draft.id ? ' active' : ''}`} onClick={() => selectTheory(t.id)}>
+            <FlaskConical size={14} /> <span className="ellipsis">{t.name || 'Untitled theory'}</span>
+          </button>
+        ))}
+        <button className="btn ghost sm" onClick={newTheory}><Plus size={14} /> New theory</button>
+        <span className={`save-status ${status}`} role="status">
+          {status === 'saving' ? <><Loader2 size={13} className="spin" /> Saving…</>
+            : status === 'unsaved' ? 'Editing…'
+            : status === 'error' ? 'Couldn’t save. Will retry on your next change.'
+            : <><Check size={13} /> All theories saved</>}
+        </span>
+      </div>
 
       <PlanningOnlyNotice />
 
       <div className="grid g-3-1 mt">
-        <Card title={<span className="row" style={{ gap: 8 }}><FlaskConical size={18} /> {activeScenario ? activeScenario.name : 'Your theory'}</span>}
-          subtitle={activeScenario ? 'Saved theory. Edits here aren’t saved until you click Save theory.' : 'Starts as a copy of your main plan.'}
-          action={activeScenario && <button className="btn ghost sm danger" onClick={deleteScenario}><Trash2 size={14} /> Delete</button>}>
+        <Card>
+          <div className="spread" style={{ marginBottom: 14, alignItems: 'flex-start' }}>
+            <div className="field" style={{ flex: '1 1 240px' }}>
+              <label htmlFor="theory-name">Theory name</label>
+              <input id="theory-name" value={draft.name} maxLength={80} placeholder="e.g. Tax refund + $100 raise"
+                onChange={(e) => setDraft((t) => ({ ...t, name: e.target.value }))} style={{ fontWeight: 600 }} />
+              <span className="hint">Saved automatically{draft.updatedAt ? ` · last changed ${draft.updatedAt}` : ''}.</span>
+            </div>
+            <div className="row" style={{ gap: 4, marginTop: 22 }}>
+              <button className="btn ghost sm" onClick={duplicateTheory} title="Make a copy to try a variation"><Copy size={14} /> Duplicate</button>
+              <button className="btn ghost sm" onClick={resetToMain} title="Make this theory match your main plan again"><RotateCcw size={14} /> Reset</button>
+              <button className="btn ghost sm danger" onClick={deleteTheory}><Trash2 size={14} /> Delete</button>
+            </div>
+          </div>
           <div className="row" style={{ gap: 24, alignItems: 'flex-end' }}>
             <div className="field">
               <label htmlFor="t-budget">Monthly payment toward cards</label>
@@ -273,16 +355,13 @@ export default function PayoffTheory() {
 
       <PayoffSchedule plan={theory} cards={cards} title="Theory month by month" />
 
-      <SaveTheoryModal open={saving} onClose={() => setSaving(false)} existing={activeScenario}
-        onSave={async (name, asNew) => { await saveScenario(name, asNew); setSaving(false); }} />
-
       <Modal open={applying} onClose={() => setApplying(false)} title="Apply theory to your main plan?"
         footer={<>
           <button className="btn" onClick={() => setApplying(false)}>Cancel</button>
           <button className="btn primary" onClick={apply}><CheckCircle2 size={16} /> Apply to main plan</button>
         </>}>
         <div className="stack" style={{ gap: 12 }}>
-          <p>Your main plan will become:</p>
+          <p>Your main plan will become <b>{draft.name || 'this theory'}</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li>{money0(draft.budget)}/month toward cards, {draft.strategy} strategy{draft.budget !== main.budget ? ` (was ${money0(main.budget)})` : ''}</li>
             {cleanDraft.adjustments.map((a) => <li key={a.id}>{describeAdjustment(a, cardName)}</li>)}
@@ -311,28 +390,3 @@ function CompareRow({ label, main, theory, delta, good }) {
   );
 }
 
-function SaveTheoryModal({ open, onClose, existing, onSave }) {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (asNew) => {
-    const n = (name || existing?.name || '').trim();
-    if (!n) return;
-    setBusy(true);
-    try { await onSave(n, asNew); setName(''); } finally { setBusy(false); }
-  };
-  return (
-    <Modal open={open} onClose={onClose} title="Save theory"
-      footer={<>
-        <button className="btn" onClick={onClose}>Cancel</button>
-        {existing && <button className="btn" disabled={busy} onClick={() => submit(true)}>Save as new</button>}
-        <button className="btn primary" disabled={busy || !(name.trim() || existing)} onClick={() => submit(false)}><Save size={16} /> {existing ? 'Update' : 'Save'}</button>
-      </>}>
-      <div className="field">
-        <label htmlFor="theory-name">Name</label>
-        <input id="theory-name" data-autofocus value={name} placeholder={existing?.name || 'e.g. Tax refund + $50 raise'} maxLength={80}
-          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit(false)} />
-        <span className="hint">Saved theories are stored in your encrypted vault and can be reloaded from “Saved theories…”.</span>
-      </div>
-    </Modal>
-  );
-}

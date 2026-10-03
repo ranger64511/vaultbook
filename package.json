@@ -17,8 +17,8 @@
     "encryption"
   ],
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,magenta \"node --watch server/index.js\" \"vite\"",
-    "dev:demo": "concurrently -k -n api,web -c blue,magenta \"node --watch server/index.js --demo\" \"vite\"",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"node --watch-path=server server/index.js\" \"vite\"",
+    "dev:demo": "concurrently -k -n api,web -c blue,magenta \"node --watch-path=server server/index.js --demo\" \"vite\"",
     "build": "vite build",
     "start": "node server/index.js --prod",
     "samples": "node samples/generate.js",
