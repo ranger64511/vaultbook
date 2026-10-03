@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, Search, Trash2, ReceiptText, Download } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Amount, Modal, Segmented, CategorySelect } from '../components/ui.jsx';
-import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate } from '../lib/format.js';
+import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate, dayLabel } from '../lib/format.js';
 import { kindOf } from '../lib/analytics.js';
 
 const PAGE = 400;
@@ -34,7 +34,7 @@ export default function Transactions() {
 
   const groups = useMemo(() => {
     const out = [];
-    const keyFn = group === 'week' ? (t) => weekKey(t.date) : group === 'month' ? (t) => t.date.slice(0, 7) : () => 'all';
+    const keyFn = { month: (t) => t.date.slice(0, 7), week: (t) => weekKey(t.date), day: (t) => t.date }[group] || (() => 'all');
     for (const t of filtered.slice(0, limit)) {
       const k = keyFn(t);
       let g = out[out.length - 1];
@@ -59,7 +59,7 @@ export default function Transactions() {
     if (t.merchant && similar.length) setRuleAsk({ merchant: t.merchant, category: cat, count: similar.length });
   };
 
-  const groupLabel = (k) => (group === 'week' ? `Week of ${weekLabel(k)}` : group === 'month' ? monthLabel(k, 'long') : 'All transactions');
+  const groupLabel = (k) => ({ month: () => monthLabel(k, 'long'), week: () => `Week of ${weekLabel(k)}`, day: () => dayLabel(k) }[group]?.() ?? 'All transactions');
 
   return (
     <>
@@ -83,7 +83,7 @@ export default function Transactions() {
             {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
           <CategorySelect categories={data.categories} value={category} onChange={setCategory} includeAll />
-          <Segmented label="Group by" value={group} onChange={setGroup} options={[{ value: 'month', label: 'Month' }, { value: 'week', label: 'Week' }, { value: 'none', label: 'None' }]} />
+          <Segmented label="Group by" value={group} onChange={setGroup} options={[{ value: 'month', label: 'Month' }, { value: 'week', label: 'Week' }, { value: 'day', label: 'Day' }, { value: 'none', label: 'None' }]} />
         </div>
 
         {!filtered.length ? (
@@ -101,7 +101,7 @@ export default function Transactions() {
                   <Fragment key={g.key}>
                     {group !== 'none' && (
                       <tr className="group-row">
-                        <td colSpan={3}>{groupLabel(g.key)} <span className="faint" style={{ fontWeight: 500 }}>· {g.totals.n} transactions</span></td>
+                        <td colSpan={3}>{groupLabel(g.key)} <span className="faint" style={{ fontWeight: 500 }}>· {g.totals.n} transaction{g.totals.n === 1 ? '' : 's'}</span></td>
                         <td colSpan={3} className="amount">
                           <span className="pos">+{money(g.totals.in)}</span>
                           <span className="faint"> in · </span>

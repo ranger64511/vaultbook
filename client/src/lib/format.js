@@ -49,3 +49,4 @@ export const monthsFromNow = (n) => {
   d.setMonth(d.getMonth() + n);
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 };
+export const dayLabel = (iso) => toDate(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
