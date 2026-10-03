@@ -495,12 +495,17 @@ function cleanAdjustments(list) {
   return list.slice(0, 100).flatMap((a) => {
     const amount = Math.round(Number(a?.amount) * 100) / 100;
     if (!['lump', 'increase'].includes(a?.type) || !(amount > 0) || amount > 1e8 || !MONTH_RE.test(a?.month || '')) return [];
+    const repeat = a.type === 'lump' && ['monthly', 'quarterly', 'semiannual', 'yearly'].includes(a.repeat) ? a.repeat : 'none';
+    const percent = a.percent === '' || a.percent == null || !Number.isFinite(Number(a.percent)) ? null : Math.min(100, Math.max(0, Number(a.percent)));
     return [{
       id: /^[\w-]{1,40}$/.test(a.id || '') ? a.id : crypto.randomUUID(),
       type: a.type,
+      source: ['bonus', 'raise', 'lump', 'increase'].includes(a.source) ? a.source : null,
       amount,
+      percent,
       month: a.month,
-      endMonth: a.type === 'increase' && MONTH_RE.test(a.endMonth || '') && a.endMonth >= a.month ? a.endMonth : null,
+      repeat,
+      endMonth: (a.type === 'increase' || repeat !== 'none') && MONTH_RE.test(a.endMonth || '') && a.endMonth >= a.month ? a.endMonth : null,
       target: a.type === 'lump' && state.data.accounts.some((x) => x.id === a.target && isDebt(x.type)) ? a.target : null,
       note: String(a.note || '').slice(0, 120),
     }];

@@ -258,3 +258,8 @@ tr.selected-row td { background: var(--accent-soft); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.extra-row { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.extra-row .field label { font-size: 12px; }
+.extra-row input, .extra-row select { height: 32px; }
+.extra-row input[type='month'] { width: 150px; }
+.extra-note { flex-basis: 100%; }

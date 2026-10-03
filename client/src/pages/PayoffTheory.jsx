@@ -10,7 +10,7 @@ import { useChartColors } from '../lib/theme.js';
 import { money, money0, moneyCompact, monthsFromNow, currentMonth, addMonths } from '../lib/format.js';
 import {
   duration, monthTicks, tickLabel, payoffDebts, debtsFrom, minimumTotal, mainPlanSettings, runPlan, monthsBetween,
-  firstPaymentMonth, describeAdjustment, totalExtra,
+  firstPaymentMonth, describeAdjustment, totalExtra, EXTRA_KINDS, REPEATS, kindOfAdjustment, towardDebt, toSimExtras,
 } from '../lib/payoff.js';
 
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -122,11 +122,14 @@ export default function PayoffTheory() {
   const cardName = (id) => cards.find((a) => a.id === id)?.name;
   const update = (id, patch) => setDraft((d) => ({ ...d, adjustments: d.adjustments.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
   const remove = (id) => setDraft((d) => ({ ...d, adjustments: d.adjustments.filter((a) => a.id !== id) }));
-  const add = (type) => setDraft((d) => ({
+  const add = (kind) => setDraft((d) => ({
     ...d,
-    adjustments: [...d.adjustments, type === 'lump'
-      ? { id: newId(), type, amount: 1000, month: addMonths(firstPay, 2), target: null }
-      : { id: newId(), type, amount: 100, month: firstPay, endMonth: null }],
+    adjustments: [...d.adjustments, {
+      bonus: { id: newId(), type: 'lump', source: 'bonus', amount: 2000, percent: 50, month: addMonths(firstPay, 2), repeat: 'yearly', endMonth: null, target: null },
+      raise: { id: newId(), type: 'increase', source: 'raise', amount: 200, percent: 100, month: addMonths(firstPay, 3), endMonth: null },
+      lump: { id: newId(), type: 'lump', source: 'lump', amount: 1000, percent: 100, month: addMonths(firstPay, 2), repeat: 'none', target: null },
+      increase: { id: newId(), type: 'increase', source: 'increase', amount: 100, percent: 100, month: firstPay, endMonth: null },
+    }[kind]],
   }));
   const resetToMain = () => {
     if (!confirm(`Reset “${draft.name}” to match your main plan? Its extra payments will be replaced.`)) return;
@@ -174,7 +177,9 @@ export default function PayoffTheory() {
 
   const len = Math.min(Math.max(fin(mainPlan) ? mainPlan.months : 120, fin(theory) ? theory.months : 0, 6), 360);
   const chart = Array.from({ length: len + 1 }, (_, i) => ({ month: i, main: mainPlan.schedule[i]?.total ?? 0, theory: theory.schedule[i]?.total ?? 0 }));
-  const lumpMonths = draft.adjustments.filter((a) => a.type === 'lump' && a.month >= firstPay).map((a) => monthsBetween(currentMonth(), a.month)).filter((m) => m <= len);
+  // Mark lump-sum and bonus months on the chart (skipped when there are too many, e.g. monthly bonuses).
+  const lumpAll = [...new Set(toSimExtras(draft.adjustments).filter((x) => x.type === 'lump' && x.start <= len).map((x) => x.start))];
+  const lumpMonths = lumpAll.length <= 24 ? lumpAll : [];
   const sameAsMain = !changed;
 
   return (
@@ -230,57 +235,22 @@ export default function PayoffTheory() {
           {draft.budget < minTotal - 0.005 && <div className="error-box mt">Below your combined minimum payments ({money(minTotal)}).</div>}
 
           <div className="spread mt" style={{ marginTop: 20 }}>
-            <h3>Extra payments</h3>
-            <div className="row">
-              <button className="btn sm" onClick={() => add('lump')}><Plus size={14} /> Lump sum</button>
-              <button className="btn sm" onClick={() => add('increase')}><Plus size={14} /> Monthly increase</button>
+            <h3>Extra payments, bonuses & raises</h3>
+            <div className="row" style={{ gap: 6 }}>
+              {EXTRA_KINDS.map((k) => <button key={k.value} className="btn sm" onClick={() => add(k.value)} title={k.hint}><Plus size={14} /> {k.label}</button>)}
             </div>
           </div>
           {!draft.adjustments.length ? (
             <p className="faint" style={{ marginTop: 8 }}>
-              Add a <b>lump sum</b> for one-time money like a tax refund, bonus or gift, or a <b>monthly increase</b> for a raise or money freed up from cancelled subscriptions.
+              Add a <b>bonus</b> (one-time or repeating: monthly, quarterly, twice a year or yearly), a <b>raise</b> starting any month,
+              a one-time <b>lump sum</b> like a tax refund, or a <b>monthly increase</b> like money freed from cancelled subscriptions.
             </p>
           ) : (
-            <div className="table-wrap" style={{ marginTop: 8 }}>
-              <table className="compact-table">
-                <thead><tr><th>Type</th><th>Amount</th><th>When</th><th>Until / goes to</th><th /></tr></thead>
-                <tbody>
-                  {draft.adjustments.map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <select className="inline" value={a.type} onChange={(e) => update(a.id, { type: e.target.value, target: null, endMonth: null })} aria-label="Type">
-                          <option value="lump">Lump sum</option><option value="increase">Monthly increase</option>
-                        </select>
-                      </td>
-                      <td>
-                        <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
-                          {a.type === 'increase' && <span className="faint">+</span>}
-                          <input type="number" min="0" step="10" value={a.amount} onChange={(e) => update(a.id, { amount: e.target.value === '' ? '' : Number(e.target.value) })} style={{ width: 88, height: 30 }} aria-label="Amount" />
-                          {a.type === 'increase' && <span className="faint">/mo</span>}
-                        </div>
-                      </td>
-                      <td>
-                        <input type="month" value={a.month} min={firstPay} onChange={(e) => e.target.value && update(a.id, { month: e.target.value })} style={{ height: 30 }} aria-label={a.type === 'lump' ? 'Month of lump sum' : 'Start month'} />
-                        {a.month < firstPay && <div className="faint bad">{a.type === 'lump' ? 'In the past, ignored' : 'Starts next month'}</div>}
-                      </td>
-                      <td>
-                        {a.type === 'lump' ? (
-                          <select className="inline" value={a.target || ''} onChange={(e) => update(a.id, { target: e.target.value || null })} aria-label="Which debt" style={{ maxWidth: 220 }}>
-                            <option value="">Focus debt ({draft.strategy})</option>
-                            {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-                          </select>
-                        ) : (
-                          <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                            <input type="month" value={a.endMonth || ''} min={a.month} onChange={(e) => update(a.id, { endMonth: e.target.value || null })} style={{ height: 30 }} aria-label="End month (optional)" />
-                            {!a.endMonth && <span className="faint">until paid off</span>}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ width: 40 }}><button className="btn ghost icon sm" aria-label="Remove" onClick={() => remove(a.id)}><Trash2 size={14} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="stack" style={{ gap: 10, marginTop: 10 }}>
+              {draft.adjustments.map((a) => (
+                <ExtraEditor key={a.id} a={a} debts={cards} strategy={draft.strategy} firstPay={firstPay}
+                  onChange={(patch) => update(a.id, patch)} onRemove={() => remove(a.id)} />
+              ))}
             </div>
           )}
         </Card>
@@ -312,7 +282,7 @@ export default function PayoffTheory() {
       </div>
 
       <Card className="mt" title="Total balance: theory vs. main plan" action={<Legend items={[{ label: 'Theory', color: c.series[0] }, { label: 'Main plan', color: c.muted }]} />}
-        subtitle={lumpMonths.length ? 'Dotted lines mark lump-sum months.' : undefined}>
+        subtitle={lumpMonths.length ? 'Dotted lines mark lump-sum and bonus months.' : undefined}>
         <div className="chart-box">
           <ResponsiveContainer>
             <LineChart data={chart}>
@@ -390,3 +360,67 @@ function CompareRow({ label, main, theory, delta, good }) {
   );
 }
 
+
+/** One extra payment: bonus, raise, lump sum or monthly increase. */
+function ExtraEditor({ a, debts, strategy, firstPay, onChange, onRemove }) {
+  const kind = kindOfAdjustment(a);
+  const meta = EXTRA_KINDS.find((k) => k.value === kind) || EXTRA_KINDS[2];
+  const lump = a.type === 'lump';
+  const repeating = lump && a.repeat && a.repeat !== 'none';
+  const pct = a.percent == null || a.percent === '' ? 100 : a.percent;
+  const setKind = (value) => {
+    const k = EXTRA_KINDS.find((x) => x.value === value);
+    onChange({ source: value, type: k.type, ...(k.type === 'lump' ? { repeat: value === 'bonus' ? 'yearly' : 'none', endMonth: null } : { target: null, repeat: 'none' }) });
+  };
+  return (
+    <div className="extra-row">
+      <div className="field">
+        <label>Type</label>
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          {EXTRA_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>{lump ? 'Amount' : 'Extra per month'}</label>
+        <input type="number" min="0" step="10" value={a.amount} onChange={(e) => onChange({ amount: e.target.value === '' ? '' : Number(e.target.value) })} style={{ width: 110 }} />
+      </div>
+      <div className="field">
+        <label>% toward debt</label>
+        <input type="number" min="0" max="100" step="5" value={pct} onChange={(e) => onChange({ percent: e.target.value === '' ? '' : Number(e.target.value) })} style={{ width: 80 }} />
+      </div>
+      <div className="field">
+        <label>{lump && !repeating ? 'Month' : 'Starting'}</label>
+        <input type="month" value={a.month} min={firstPay} onChange={(e) => e.target.value && onChange({ month: e.target.value })} />
+      </div>
+      {lump && (
+        <div className="field">
+          <label>Repeats</label>
+          <select value={a.repeat || 'none'} onChange={(e) => onChange({ repeat: e.target.value, endMonth: e.target.value === 'none' ? null : a.endMonth })}>
+            {REPEATS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+      )}
+      {(!lump || repeating) && (
+        <div className="field">
+          <label>Until <span className="faint">(optional)</span></label>
+          <input type="month" value={a.endMonth || ''} min={a.month} onChange={(e) => onChange({ endMonth: e.target.value || null })} />
+        </div>
+      )}
+      {lump && (
+        <div className="field">
+          <label>Goes to</label>
+          <select value={a.target || ''} onChange={(e) => onChange({ target: e.target.value || null })} style={{ maxWidth: 200 }}>
+            <option value="">Focus debt ({strategy})</option>
+            {debts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+      )}
+      <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>
+      <div className="extra-note faint">
+        {meta.hint}{' '}
+        {Number(a.amount) > 0 && pct < 100 && <b>{`$${towardDebt(a).toLocaleString('en-US', { maximumFractionDigits: 2 })}${lump ? '' : '/mo'} goes to debt.`}</b>}
+        {a.month < firstPay && <span className="bad"> {lump && !repeating ? 'This month is in the past, so it’s ignored.' : 'Already started; counted from next month.'}</span>}
+      </div>
+    </div>
+  );
+}

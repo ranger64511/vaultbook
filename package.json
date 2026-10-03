@@ -22,7 +22,7 @@
     "build": "vite build",
     "start": "node server/index.js --prod",
     "samples": "node samples/generate.js",
-    "test": "node --test server/categorize.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js"
+    "test": "node --test server/categorize.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js client/src/lib/payoff.test.js"
   },
   "dependencies": {
     "express": "^5.2.1",
