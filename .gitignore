@@ -1,0 +1,30 @@
+# Dependencies & build output
+node_modules/
+client/dist/
+
+# Encrypted vaults: never commit, even though they're encrypted
+data/
+data-demo/
+*.enc
+*.enc.bak
+vaultbook-backup-*.json
+
+# Plaintext exports and real statements you might drop in the project folder
+transactions.csv
+statements/
+*.pdf
+*.ofx
+*.qfx
+*.qbo
+
+# Local tool / editor / OS files
+.claude/settings.local.json
+.env
+.env.*
+*.log
+*.tmp
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
