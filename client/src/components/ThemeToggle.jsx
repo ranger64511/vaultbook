@@ -10,9 +10,9 @@ const OPTIONS = [
 export default function ThemeToggle() {
   const [pref, setPref] = useThemePreference();
   return (
-    <div className="segmented" role="group" aria-label="Color theme" style={{ width: '100%' }}>
+    <div className="segmented theme-toggle" role="group" aria-label="Color theme">
       {OPTIONS.map(({ id, label, icon: Icon }) => (
-        <button key={id} aria-pressed={pref === id} onClick={() => setPref(id)} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+        <button key={id} aria-pressed={pref === id} onClick={() => setPref(id)}>
           <Icon size={14} /> {label}
         </button>
       ))}

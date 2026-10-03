@@ -159,6 +159,9 @@ select.inline:hover { border-color: var(--border-strong); background: var(--surf
 .segmented { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-hover); gap: 2px; }
 .segmented button { border: 0; background: transparent; color: var(--text-2); font: inherit; font-weight: 550; font-size: 13px; padding: 5px 12px; border-radius: 7px; cursor: pointer; }
 .segmented button[aria-pressed='true'] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+/* Three equal columns that always fit their container (e.g. the sidebar). */
+.theme-toggle { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+.theme-toggle button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 4px; min-width: 0; white-space: nowrap; }
 
 /* ---------- badges ---------- */
 .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-hover); color: var(--text-2); white-space: nowrap; }
