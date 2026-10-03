@@ -22,14 +22,16 @@
     "build": "vite build",
     "start": "node server/index.js --prod",
     "samples": "node samples/generate.js",
-    "test": "node --test server/categorize.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js client/src/lib/payoff.test.js"
+    "test": "node --test server/categorize.test.js server/parsers.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js client/src/lib/payoff.test.js"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
     "multer": "^2.4.0",
     "papaparse": "^5.7.0",
-    "pdfjs-dist": "^6.4.299"
+    "pdfjs-dist": "^6.4.299",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.3.0",

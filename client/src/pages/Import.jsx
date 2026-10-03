@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { FileUp, ArrowLeftRight, Undo2, CheckCircle2, FileText } from 'lucide-react';
+import { FileUp, ArrowLeftRight, Undo2, CheckCircle2, FileText, Lock } from 'lucide-react';
 import { api } from '../api.js';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Amount, CategorySelect } from '../components/ui.jsx';
@@ -17,8 +17,31 @@ export default function Import() {
   const [error, setError] = useState('');
   const [over, setOver] = useState(false);
   const [newAccount, setNewAccount] = useState(!data.accounts.length);
+  const [ocr, setOcr] = useState(null); // { label, pct } while reading a photo or scan
+  const [keepFile, setKeepFile] = useState(true);
   const inputRef = useRef(null);
   const account = accountsById.get(accountId);
+
+  const showPreview = (p) => {
+    setPreview(p);
+    setRows(p.rows.map((r) => ({ ...r, include: !r.duplicate })));
+    setApplyStatement(Object.keys(p.statement || {}).length > 0);
+    setKeepFile(!!p.uploadId);
+  };
+
+  // Photos and scanned PDFs: read the text in this browser, then let the server find transactions.
+  const readWithOcr = async (file) => {
+    setOcr({ label: 'Loading the text reader…', pct: 0 });
+    const { ocrFile } = await import('../lib/ocr.js'); // loaded only when needed
+    const lines = await ocrFile(file, setOcr);
+    setOcr({ label: 'Finding transactions…', pct: 100 });
+    const form = new FormData();
+    form.append('accountId', accountId);
+    form.append('fileName', file.name);
+    form.append('lines', JSON.stringify(lines));
+    form.append('file', file);
+    showPreview(await api('/import/preview-text', { method: 'POST', form }));
+  };
 
   const upload = async (file) => {
     if (!file) return;
@@ -26,17 +49,24 @@ export default function Import() {
     setError('');
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append('accountId', accountId);
-      form.append('file', file);
-      const p = await api('/import/preview', { method: 'POST', form });
-      setPreview(p);
-      setRows(p.rows.map((r) => ({ ...r, include: !r.duplicate })));
-      setApplyStatement(Object.keys(p.statement || {}).length > 0);
+      if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|bmp|gif)$/i.test(file.name)) {
+        await readWithOcr(file);
+      } else {
+        const form = new FormData();
+        form.append('accountId', accountId);
+        form.append('file', file);
+        try {
+          showPreview(await api('/import/preview', { method: 'POST', form }));
+        } catch (e) {
+          if (e.status !== 422) throw e;
+          await readWithOcr(file); // scanned PDF with no text layer
+        }
+      }
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Could not read this file');
     } finally {
       setBusy(false);
+      setOcr(null);
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -58,6 +88,8 @@ export default function Import() {
           fileName: preview.fileName,
           rows: included.map(({ date, description, amount, category }) => ({ date, description, amount, category })),
           statement: applyStatement ? preview.statement : null,
+          uploadId: preview.uploadId,
+          keepFile: keepFile && !!preview.uploadId,
         },
       });
       notify(`Imported ${res.count} transactions`);
@@ -105,9 +137,13 @@ export default function Import() {
               onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files[0]); }}
             >
               <FileUp size={30} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />
-              <div style={{ fontWeight: 600, marginTop: 8 }}>{busy ? 'Reading statement…' : 'Drop a file here or click to browse'}</div>
-              <div className="faint" style={{ marginTop: 4 }}>.csv · .ofx · .qfx · .pdf — up to 15 MB</div>
-              <input ref={inputRef} type="file" accept=".csv,.txt,.ofx,.qfx,.qbo,.pdf" hidden disabled={!accountId || busy} onChange={(e) => upload(e.target.files[0])} />
+              <div style={{ fontWeight: 600, marginTop: 8 }}>{ocr ? ocr.label : busy ? 'Reading statement…' : 'Drop a file here or click to browse'}</div>
+              {ocr ? (
+                <div className="bar" style={{ maxWidth: 320, margin: '12px auto 0' }}><span style={{ width: `${ocr.pct}%` }} /></div>
+              ) : (
+                <div className="faint" style={{ marginTop: 4 }}>.csv · .ofx · .qfx · .pdf · photos (.jpg, .png) — up to 15 MB</div>
+              )}
+              <input ref={inputRef} type="file" accept=".csv,.txt,.ofx,.qfx,.qbo,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*" hidden disabled={!accountId || busy} onChange={(e) => upload(e.target.files[0])} />
             </label>
             {error && <div className="error-box mt" role="alert">{error}</div>}
           </Card>
@@ -116,6 +152,8 @@ export default function Import() {
             <div className="stack" style={{ gap: 12, fontSize: 13.5 }} >
               <p><b>Best: CSV or OFX/QFX.</b> In your bank’s website look for “Download transactions” or “Export”. These import perfectly.</p>
               <p><b>PDF statements</b> work for most text-based statements and also pick up the card balance, minimum payment and APR. Always check the preview.</p>
+              <p><b>Photos and scanned statements</b> are read with OCR right in your browser, on this computer. Use a flat, well-lit, straight-on photo. OCR can misread numbers, so check every row.</p>
+              <p><b>Statement copies</b> can be kept encrypted with your password. If the password is forgotten, they can’t be opened by anyone.</p>
               <p><b>Duplicates</b> are detected automatically, so overlapping date ranges are safe to import.</p>
               <p className="muted">Money out is shown as negative, money in as positive. If a file comes in backwards, use <i>Flip signs</i>.</p>
             </div>
@@ -126,7 +164,7 @@ export default function Import() {
       {preview && (
         <div className="stack">
           <Card title={<span className="row" style={{ gap: 8 }}><FileText size={18} /> {preview.fileName}</span>}
-            subtitle={`${preview.format.toUpperCase()} · ${rows.length} rows found · importing into ${account?.name}`}
+            subtitle={`${preview.format === 'ocr' ? 'Read with OCR' : preview.format.toUpperCase()} · ${rows.length} rows found · importing into ${account?.name}`}
             action={<div className="row">
               <button className="btn" onClick={() => { setPreview(null); setRows([]); }}>Cancel</button>
               <button className="btn primary" onClick={commit} disabled={busy || !included.length}><CheckCircle2 size={16} /> Import {included.length}</button>
@@ -134,6 +172,13 @@ export default function Import() {
             <div className="stack" style={{ gap: 10 }}>
               {preview.warnings.map((w) => <div key={w} className="warn-box">{w}</div>)}
               {dupes > 0 && <div className="info-box">{dupes} row{dupes === 1 ? ' looks' : 's look'} already imported and {dupes === 1 ? 'was' : 'were'} unchecked.</div>}
+              {preview.uploadId && (
+                <label className="row" style={{ gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={keepFile} onChange={(e) => setKeepFile(e.target.checked)} />
+                  <Lock size={14} />
+                  <span>Keep an encrypted copy of this statement <span className="faint">(only your password can open it; if the password is lost, so is the copy)</span></span>
+                </label>
+              )}
               {hasStatement && (
                 <label className="info-box row" style={{ cursor: 'pointer' }}>
                   <input type="checkbox" checked={applyStatement} onChange={(e) => setApplyStatement(e.target.checked)} />
@@ -199,7 +244,11 @@ export default function Import() {
               <tbody>
                 {[...data.imports].reverse().map((imp) => (
                   <tr key={imp.id}>
-                    <td className="desc">{imp.fileName}</td>
+                    <td className="desc">
+                      {imp.file
+                        ? <a href={`/api/imports/${imp.id}/file`} download title="Download the encrypted copy (decrypted for you)"><Lock size={12} /> {imp.fileName}</a>
+                        : imp.fileName}
+                    </td>
                     <td className="muted">{accountsById.get(imp.accountId)?.name}</td>
                     <td className="faint">{imp.from ? `${longDate(imp.from)} – ${longDate(imp.to)}` : '—'}</td>
                     <td className="faint">{new Date(imp.importedAt).toLocaleDateString()}</td>

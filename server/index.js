@@ -8,6 +8,7 @@ import multer from 'multer';
 import * as vault from './vault.js';
 import { DEFAULT_CATEGORIES, allRules, categorize, merchantKey } from './categorize.js';
 import { parseStatement } from './parsers/index.js';
+import { parseStatementLines } from './parsers/pdf.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROD = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
@@ -30,6 +31,7 @@ const sessions = new Map(); // token -> { created, lastSeen }
 
 function lock() {
   sessions.clear();
+  pendingUploads.clear();
   state.dek?.fill(0);
   state.dek = null;
   state.data = null;
@@ -79,7 +81,9 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      // OCR runs in a Web Worker using WebAssembly.
+      scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
+      workerSrc: ["'self'", 'blob:'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:'],
       fontSrc: ["'self'", 'data:'],
@@ -98,6 +102,16 @@ app.use((req, res, next) => {
   if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) return res.status(403).send('Forbidden host');
   next();
 });
+
+// OCR engine files, served from this machine so nothing is downloaded from the internet.
+const OCR_ASSETS = {
+  worker: path.join(ROOT, 'node_modules', 'tesseract.js', 'dist'),
+  core: path.join(ROOT, 'node_modules', 'tesseract.js-core'),
+  lang: path.join(ROOT, 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int'),
+};
+for (const [name, dir] of Object.entries(OCR_ASSETS)) {
+  app.use(`/ocr/${name}`, express.static(dir, { index: false, fallthrough: false, maxAge: '7d' }));
+}
 
 app.use('/api', express.json({ limit: '10mb' }));
 app.use('/api', (req, res, next) => {
@@ -262,6 +276,7 @@ app.delete('/api/accounts/:id', (req, res) => {
   const id = req.params.id;
   state.data.accounts = state.data.accounts.filter((a) => a.id !== id);
   state.data.transactions = state.data.transactions.filter((t) => t.accountId !== id);
+  for (const imp of state.data.imports) if (imp.accountId === id) vault.deleteFile(imp.id);
   state.data.imports = state.data.imports.filter((i) => i.accountId !== id);
   persist();
   res.json({ ok: true });
@@ -329,12 +344,19 @@ app.delete('/api/transactions/:id', (req, res) => {
 // ------------------------------------------------------------- imports ----
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
 
-app.post('/api/import/preview', upload.single('file'), asyncRoute(async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const acct = state.data.accounts.find((a) => a.id === req.body.accountId);
-  try {
-    const parsed = await parseStatement(req.file.originalname, req.file.buffer, acct?.type);
-    const sign = parsed.flip ? -1 : 1;
+// Uploaded statements wait here (in memory only) between preview and import, so an
+// encrypted copy can be kept if the user asks. Cleared on import, after 30 minutes, or on lock.
+const pendingUploads = new Map(); // uploadId -> { buffer, name, type, at }
+const PENDING_MS = 30 * 60 * 1000;
+function holdUpload(file) {
+  for (const [id, p] of pendingUploads) if (Date.now() - p.at > PENDING_MS) pendingUploads.delete(id);
+  const id = crypto.randomUUID();
+  pendingUploads.set(id, { buffer: file.buffer, name: file.originalname, type: file.mimetype || 'application/octet-stream', at: Date.now() });
+  return id;
+}
+
+function previewPayload(parsed, acct, fileName, uploadId) {
+  const sign = parsed.flip ? -1 : 1;
     const rules = allRules(state.data);
     // Flag rows already imported (same account, date, amount and merchant).
     const existing = new Map();
@@ -358,24 +380,45 @@ app.post('/api/import/preview', upload.single('file'), asyncRoute(async (req, re
         duplicate: !!h && n <= (existing.get(h) || 0),
       };
     });
-    res.json({
-      fileName: req.file.originalname,
+    return {
+      fileName,
+      uploadId,
       format: parsed.format,
       flipped: !!parsed.flip,
       accountTypeHint: parsed.accountTypeHint,
       statement: parsed.statement,
       warnings: parsed.warnings,
       rows,
-    });
+    };
+}
+
+app.post('/api/import/preview', upload.single('file'), asyncRoute(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const acct = state.data.accounts.find((a) => a.id === req.body.accountId);
+  try {
+    const parsed = await parseStatement(req.file.originalname, req.file.buffer, acct?.type);
+    res.json(previewPayload(parsed, acct, req.file.originalname, holdUpload(req.file)));
   } catch (e) {
-    res.status(400).json({ error: e.message || 'Could not read this file' });
+    res.status(e.code === 'NEEDS_OCR' ? 422 : 400).json({ error: e.message || 'Could not read this file', code: e.code });
   }
-  // The uploaded file only ever existed in memory; drop our reference.
-  req.file.buffer = null;
+}));
+
+// Text read by OCR in the browser (photos, scanned PDFs). The original file comes along
+// only so an encrypted copy can be kept; it is never written to disk unencrypted.
+app.post('/api/import/preview-text', upload.single('file'), asyncRoute(async (req, res) => {
+  const acct = state.data.accounts.find((a) => a.id === req.body.accountId);
+  let lines;
+  try { lines = JSON.parse(req.body.lines || '[]'); } catch { lines = null; }
+  if (!Array.isArray(lines) || !lines.length) return res.status(400).json({ error: 'No text was found to read' });
+  lines = lines.slice(0, 20000).map((l) => String(l).slice(0, 500));
+  const parsed = parseStatementLines(lines, acct?.type, 'ocr');
+  parsed.flip = false;
+  const fileName = String(req.body.fileName || req.file?.originalname || 'scanned statement').slice(0, 200);
+  res.json(previewPayload(parsed, acct, fileName, req.file ? holdUpload(req.file) : null));
 }));
 
 app.post('/api/import/commit', (req, res) => {
-  const { accountId, fileName, rows, statement } = req.body || {};
+  const { accountId, fileName, rows, statement, uploadId, keepFile } = req.body || {};
   const acct = state.data.accounts.find((a) => a.id === accountId);
   if (!acct) return res.status(400).json({ error: 'Pick an account' });
   if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'Nothing to import' });
@@ -400,15 +443,36 @@ app.post('/api/import/commit', (req, res) => {
     if (Number.isFinite(statement.creditLimit)) acct.creditLimit = statement.creditLimit;
     if (statement.dueDate) acct.dueDay = Number(statement.dueDate.slice(8, 10));
   }
+  // Optionally keep the original statement, encrypted with the vault key.
+  let file = null;
+  const pending = uploadId && pendingUploads.get(uploadId);
+  if (pending) {
+    if (keepFile) {
+      vault.saveFile(state.dek, importId, pending.buffer);
+      file = { name: pending.name, type: pending.type, size: pending.buffer.length };
+    }
+    pendingUploads.delete(uploadId);
+  }
   state.data.imports.push({
     id: importId, accountId, fileName: String(fileName || 'statement').slice(0, 200),
-    importedAt: new Date().toISOString(), count, from: minDate, to: maxDate,
+    importedAt: new Date().toISOString(), count, from: minDate, to: maxDate, file,
   });
   persist();
-  res.json({ ok: true, count });
+  res.json({ ok: true, count, keptFile: !!file });
+});
+
+app.get('/api/imports/:id/file', (req, res) => {
+  const imp = state.data.imports.find((i) => i.id === req.params.id);
+  if (!imp?.file) return res.status(404).json({ error: 'No saved copy of this statement' });
+  const buf = vault.readFile(state.dek, imp.id);
+  const safeName = imp.file.name.replace(/[^\w.\- ()]/g, '_');
+  res.set('Content-Type', imp.file.type || 'application/octet-stream');
+  res.set('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.send(buf);
 });
 
 app.delete('/api/imports/:id', (req, res) => {
+  vault.deleteFile(req.params.id);
   state.data.transactions = state.data.transactions.filter((t) => t.importId !== req.params.id);
   state.data.imports = state.data.imports.filter((i) => i.id !== req.params.id);
   persist();
@@ -557,6 +621,8 @@ app.get('/api/backup', (req, res) => {
     note: 'Encrypted. Restore by placing auth.json and vault.enc in the data folder. Requires your password.',
     auth: JSON.parse(fs.readFileSync(path.join(vault.DATA_DIR, 'auth.json'), 'utf8')),
     vault: vault.vaultBytes().toString('base64'),
+    // Saved statement copies, still encrypted (restore into data/files/<id>.enc).
+    files: Object.fromEntries(state.data.imports.filter((i) => i.file).map((i) => [i.id, vault.fileBytes(i.id)?.toString('base64')]).filter(([, b]) => b)),
   });
 });
 

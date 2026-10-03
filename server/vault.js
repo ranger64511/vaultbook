@@ -122,3 +122,32 @@ export function saveVault(dek, data) {
 export function vaultBytes() {
   return fs.readFileSync(VAULT_FILE);
 }
+
+// ----------------------------------------------------- statement files ---
+// Copies of imported statements, encrypted with the same data key as the vault.
+// Without the password the key can't be unwrapped, so a forgotten password
+// means these files are unrecoverable too. Layout: MAGIC(4) | IV(12) | TAG(16) | ct.
+const FILES_DIR = path.join(DATA_DIR, 'files');
+const FILE_MAGIC = Buffer.from('VBF1');
+const fileId = (id) => { if (!/^[\w-]{1,64}$/.test(id)) throw new Error('Bad file id'); return path.join(FILES_DIR, `${id}.enc`); };
+
+export function saveFile(dek, id, buffer) {
+  const { iv, tag, ct } = encrypt(dek, buffer, Buffer.from(`vaultbook-file:${id}`));
+  writeAtomic(fileId(id), Buffer.concat([FILE_MAGIC, iv, tag, ct]));
+  const bak = `${fileId(id)}.bak`;
+  if (fs.existsSync(bak)) fs.rmSync(bak);
+}
+
+export function readFile(dek, id) {
+  const buf = fs.readFileSync(fileId(id));
+  if (!buf.subarray(0, 4).equals(FILE_MAGIC)) throw new Error('Unrecognized file');
+  return decrypt(dek, { iv: buf.subarray(4, 16), tag: buf.subarray(16, 32), ct: buf.subarray(32) }, Buffer.from(`vaultbook-file:${id}`));
+}
+
+export function deleteFile(id) {
+  for (const p of [fileId(id), `${fileId(id)}.bak`]) if (fs.existsSync(p)) fs.rmSync(p);
+}
+
+export function fileBytes(id) {
+  return fs.existsSync(fileId(id)) ? fs.readFileSync(fileId(id)) : null;
+}

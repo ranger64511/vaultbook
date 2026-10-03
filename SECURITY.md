@@ -11,7 +11,7 @@ Vault Book is provided **as is, without support**. There is no security response
 | Other devices on your network | The server listens only on `127.0.0.1`. |
 | Malicious websites in your browser | SameSite=Strict cookies, a required CSRF header, Host-header allow-list (DNS rebinding), strict CSP, and `frame-ancestors 'none'`. |
 | Password guessing | Expensive scrypt per attempt plus exponential lockout after 5 failures. |
-| Leftover plaintext | Uploaded statements are parsed in memory only. The decrypted key is held in memory only while signed in. |
+| Leftover plaintext | Uploaded statements are parsed in memory only (OCR runs in the browser). Kept statement copies are encrypted with the vault key. The decrypted key is held in memory only while signed in. |
 
 ## What it does **not** protect against
 

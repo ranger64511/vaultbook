@@ -38,7 +38,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 
 | Area | What it does |
 |---|---|
-| **Statement import** | CSV, OFX/QFX, and PDF. Columns are auto-detected, rows are previewed before saving, duplicates are skipped, and any import can be undone. Credit card PDFs also fill in balance, minimum payment, APR, credit limit, and due date. |
+| **Statement import** | CSV, OFX/QFX, PDF, and **photos or scanned statements via OCR** (read in your browser, on your computer). Columns are auto-detected, rows are previewed before saving, duplicates are skipped, and any import can be undone. Credit card PDFs also fill in balance, minimum payment, APR, credit limit, and due date. |
 | **Transactions** | Search and filter by account or category. View one **day**, **week**, or **month** at a time (opening on today, this week, or this month; use the month picker to jump to any month, and arrows to step back and forward), or **all** transactions, with money-in and money-out totals. Re-categorize a transaction and Vault Book can remember the merchant for next time. |
 | **Accounts** | Checking, savings, money market, CDs, cash, investments (brokerage, retirement), credit cards, and loans (auto, mortgage, student, personal, medical, other). Shows totals and net worth. Enter a savings APY and Vault Book estimates interest per month and year, the balance including interest to date, and a CD's value at maturity. |
 | **Dashboard** | Total card debt and utilization, 12-month income vs. spending, weekly needs vs. wants, top spending categories, and recent activity. |
@@ -109,7 +109,8 @@ Vault Book is designed so that your financial data never leaves your computer an
 | **Password-derived key** | A random data key is wrapped with a key derived from your password using **scrypt** (N=2¹⁷, r=8, p=1). Only the wrapped key is stored, in `data/auth.json`. |
 | **Key only in memory** | The decrypted key exists only in server memory while you're signed in. It's wiped on sign-out, after 30 minutes idle, or after 12 hours at most. |
 | **Local only** | The server binds to `127.0.0.1`, so it's unreachable from other devices. Requests addressed to other hostnames are rejected (DNS-rebinding protection). |
-| **Uploads** | Statements are parsed in memory and never written to disk. |
+| **Uploads** | Statements are parsed in memory. OCR runs in your browser. Nothing is written to disk unencrypted. |
+| **Statement copies** | Optionally keep the original file of each import, encrypted (AES-256-GCM) with your vault key in `data/files/`. Only your password can open them; if it's forgotten, they're unrecoverable. Undoing an import deletes its copy. |
 | **Web hardening** | httpOnly + SameSite=Strict session cookies, a CSRF header on every change, login lockout after repeated failures, and a strict Content-Security-Policy (via [helmet](https://helmetjs.github.io/)). |
 
 See [SECURITY.md](SECURITY.md) for the threat model and its limits.
@@ -123,7 +124,8 @@ See [SECURITY.md](SECURITY.md) for the threat model and its limits.
 |---|---|---|
 | **CSV** | ★★★ | Column auto-detection handles most banks: single amount column, separate debit/credit columns, and files with header rows on top. |
 | **OFX / QFX / QBO** | ★★★ | The "Quicken" or "Money" download most banks offer. Very consistent. |
-| **PDF** | ★★☆ | Best effort for text-based statements. Scanned (image) PDFs can't be read. Always check the preview. |
+| **PDF** | ★★☆ | Best effort for text-based statements. Always check the preview. |
+| **Photos & scanned PDFs (OCR)** | ★☆☆ | Read with OCR (Tesseract) right in your browser; the engine and English data are served locally, nothing goes online. Use flat, well-lit, straight-on photos and check every row. |
 
 **Where to find these files:** in your bank's website, open an account's activity page and look for **Download** or **Export transactions**.
 

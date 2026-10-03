@@ -84,12 +84,37 @@ function closingDate(text) {
   return null;
 }
 
+export class NeedsOcrError extends Error {
+  constructor() {
+    super('This PDF has no readable text (it’s probably a scanned image). Use “Read with OCR” to scan it, or download a CSV or OFX export from your bank.');
+    this.code = 'NEEDS_OCR';
+  }
+}
+
 export async function parsePdf(buffer, accountType) {
   const lines = await extractLines(buffer);
+  if (lines.join('').replace(/\s/g, '').length < 50) throw new NeedsOcrError();
+  return parseStatementLines(lines, accountType, 'pdf');
+}
+
+/** Tidies common OCR slips in money and dates: "$ 1, 234 .56" -> "$1,234.56". */
+function cleanOcrLine(line) {
+  return line
+    .replace(/\$\s+(?=\d)/g, '$')
+    .replace(/(\d)\s*,\s*(\d{3})/g, '$1,$2')
+    .replace(/(\d)\s*\.\s*(\d{2})\b/g, '$1.$2')
+    .replace(/(\d{1,2})\s*\/\s*(\d{1,2})/g, '$1/$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Finds transactions in statement text lines. Used for text PDFs and for text read
+ * by OCR from photos or scanned PDFs (format 'ocr').
+ */
+export function parseStatementLines(rawLines, accountType, format = 'pdf') {
+  const lines = format === 'ocr' ? rawLines.map(cleanOcrLine).filter(Boolean) : rawLines;
   const text = lines.join('\n');
-  if (text.replace(/\s/g, '').length < 50) {
-    throw new Error('This PDF has no readable text (it may be a scanned image). Download a CSV or OFX export from your bank instead.');
-  }
   const isCredit = accountType === 'credit' || /minimum payment due|credit limit|new balance/i.test(text);
   const close = closingDate(text);
   const closeYear = close ? Number(close.slice(0, 4)) : new Date().getFullYear();
@@ -125,10 +150,17 @@ export async function parsePdf(buffer, accountType) {
   }
 
   const warnings = [];
-  if (!rows.length) warnings.push('No transaction lines were recognised in this PDF. Try the CSV or OFX download from your bank.');
-  else warnings.push('PDF import is best-effort. Check the dates, amounts and signs below before importing.');
+  if (!rows.length) {
+    warnings.push(format === 'ocr'
+      ? 'No transaction lines were recognised in the scanned text. Try a clearer, straight-on photo with good light, or the CSV/OFX download from your bank.'
+      : 'No transaction lines were recognised in this PDF. Try the CSV or OFX download from your bank.');
+  } else {
+    warnings.push(format === 'ocr'
+      ? 'Read with OCR. Scanned text can contain mistakes, so check every date, amount and sign below before importing.'
+      : 'PDF import is best-effort. Check the dates, amounts and signs below before importing.');
+  }
   return {
-    format: 'pdf',
+    format,
     rows,
     warnings,
     statement: statementInfo(text),
