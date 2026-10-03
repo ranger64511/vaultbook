@@ -54,3 +54,27 @@ test('planned savings: an overdue next date rolls forward', () => {
   const rows = projectPlannedSavings([{ item, stopMonth: '2026-10' }], 1, new Date(2026, 9, 3));
   assert.ok(rows[0].total >= 40); // 4–5 weekly charges in October
 });
+
+test('payoff extras: a lump sum and a monthly increase both speed things up', () => {
+  const base = simulatePayoff(debts, 400, 'avalanche');
+  const lump = simulatePayoff(debts, 400, 'avalanche', 600, [{ type: 'lump', start: 2, amount: 1000 }]);
+  const inc = simulatePayoff(debts, 400, 'avalanche', 600, [{ type: 'increase', start: 1, amount: 100 }]);
+  assert.ok(lump.months < base.months && lump.totalInterest < base.totalInterest);
+  assert.ok(inc.months < base.months && inc.totalInterest < base.totalInterest);
+  assert.equal(lump.schedule[2].extra, 1000);
+  assert.equal(lump.schedule[1].extra, 0);
+});
+
+test('payoff extras: a targeted lump goes to that card first', () => {
+  const r = simulatePayoff(debts, 400, 'avalanche', 600, [{ type: 'lump', start: 1, amount: 300, target: 'b' }]);
+  // Card b gets its minimum plus the whole $300 lump in month 1.
+  assert.ok(r.schedule[1].payments.b >= 325 - 0.01);
+});
+
+test('payoff extras: an increase stops after its end month and is ignored for minimum-only', () => {
+  const r = simulatePayoff(debts, 400, 'avalanche', 600, [{ type: 'increase', start: 1, end: 2, amount: 50 }]);
+  assert.equal(r.schedule[2].extra, 50);
+  assert.equal(r.schedule[3].extra, 0);
+  const min = simulatePayoff(debts, 0, 'minimum', 600, [{ type: 'lump', start: 1, amount: 5000 }]);
+  assert.equal(min.schedule[1].extra, 0);
+});

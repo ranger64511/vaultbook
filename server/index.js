@@ -478,12 +478,43 @@ app.put('/api/recurring/:key', (req, res) => {
   res.json({ ok: true });
 });
 
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+function cleanAdjustments(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 100).flatMap((a) => {
+    const amount = Math.round(Number(a?.amount) * 100) / 100;
+    if (!['lump', 'increase'].includes(a?.type) || !(amount > 0) || amount > 1e8 || !MONTH_RE.test(a?.month || '')) return [];
+    return [{
+      id: /^[\w-]{1,40}$/.test(a.id || '') ? a.id : crypto.randomUUID(),
+      type: a.type,
+      amount,
+      month: a.month,
+      endMonth: a.type === 'increase' && MONTH_RE.test(a.endMonth || '') && a.endMonth >= a.month ? a.endMonth : null,
+      target: a.type === 'lump' && state.data.accounts.some((x) => x.id === a.target && x.type === 'credit') ? a.target : null,
+      note: String(a.note || '').slice(0, 120),
+    }];
+  });
+}
+
 app.put('/api/settings', (req, res) => {
   const s = req.body || {};
   const next = { ...state.data.settings };
   if (s.payoffBudget !== undefined) next.payoffBudget = Math.max(0, Number(s.payoffBudget) || 0);
   if (s.payoffStrategy !== undefined) next.payoffStrategy = ['avalanche', 'snowball'].includes(s.payoffStrategy) ? s.payoffStrategy : 'avalanche';
   if (s.monthlyIncome !== undefined) next.monthlyIncome = Math.max(0, Number(s.monthlyIncome) || 0);
+  // Extra payments applied to the Main plan, and saved Payoff theory scenarios.
+  // These are plans only: Vault Book never makes a payment.
+  if (s.payoffAdjustments !== undefined) next.payoffAdjustments = cleanAdjustments(s.payoffAdjustments);
+  if (s.payoffScenarios !== undefined) {
+    next.payoffScenarios = (Array.isArray(s.payoffScenarios) ? s.payoffScenarios : []).slice(0, 50).map((sc) => ({
+      id: /^[\w-]{1,40}$/.test(sc?.id || '') ? sc.id : crypto.randomUUID(),
+      name: String(sc?.name || 'Scenario').slice(0, 80),
+      budget: Math.max(0, Number(sc?.budget) || 0),
+      strategy: ['avalanche', 'snowball'].includes(sc?.strategy) ? sc.strategy : 'avalanche',
+      adjustments: cleanAdjustments(sc?.adjustments),
+      savedAt: localToday(),
+    }));
+  }
   state.data.settings = next;
   persist();
   res.json(next);

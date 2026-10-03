@@ -15,6 +15,7 @@ import Accounts from './pages/Accounts.jsx';
 import Recurring from './pages/Recurring.jsx';
 import Budget from './pages/Budget.jsx';
 import Payoff from './pages/Payoff.jsx';
+import PayoffTheory from './pages/PayoffTheory.jsx';
 import Settings from './pages/Settings.jsx';
 
 const NAV = [
@@ -24,7 +25,13 @@ const NAV = [
   { to: '/accounts', label: 'Accounts & cards', icon: CreditCard },
   { to: '/recurring', label: 'Recurring charges', icon: Repeat },
   { to: '/budget', label: 'Budget', icon: PiggyBank },
-  { to: '/payoff', label: 'Debt payoff plan', icon: Target },
+  {
+    to: '/payoff', label: 'Debt payoff plan', icon: Target,
+    children: [
+      { to: '/payoff', label: 'Main plan', end: true },
+      { to: '/payoff/theory', label: 'Payoff theory' },
+    ],
+  },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -66,10 +73,19 @@ function Shell({ username, onLogout }) {
           Vault Book
         </div>
         <nav className="stack" style={{ gap: 2 }}>
-          {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className="nav-link">
-              <Icon size={18} strokeWidth={1.9} /> {label}
-            </NavLink>
+          {NAV.map(({ to, label, icon: Icon, end, children }) => (
+            <div key={to}>
+              <NavLink to={to} end={end} className="nav-link">
+                <Icon size={18} strokeWidth={1.9} /> {label}
+              </NavLink>
+              {children && (
+                <div className="nav-sub">
+                  {children.map((ch) => (
+                    <NavLink key={ch.to} to={ch.to} end={ch.end} className="nav-link nav-sublink">{ch.label}</NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </nav>
         <div className="sidebar-foot">
@@ -99,6 +115,7 @@ function Shell({ username, onLogout }) {
               <Route path="/recurring" element={<Recurring />} />
               <Route path="/budget" element={<Budget />} />
               <Route path="/payoff" element={<Payoff />} />
+              <Route path="/payoff/theory" element={<PayoffTheory />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

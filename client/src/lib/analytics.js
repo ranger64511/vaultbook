@@ -177,8 +177,15 @@ export const defaultMinPayment = (balance, apr) =>
  * Month-by-month payoff simulation.
  * strategy: 'avalanche' (highest APR first), 'snowball' (smallest balance first),
  * or 'minimum' (only minimum payments, no extra and no roll-over).
+ *
+ * extras (optional) add money on top of the monthly budget, by payment month index
+ * (1 = first payment month):
+ *   { type: 'increase', start, end?, amount }  extra every month from start to end
+ *   { type: 'lump', start, amount, target? }    one-time payment; goes to `target`
+ *                                                (a debt id) first, the rest follows the strategy
+ * Extras are ignored for the 'minimum' strategy.
  */
-export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', maxMonths = 600) {
+export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', maxMonths = 600, extras = []) {
   const ds = debts
     .filter((d) => d.balance > 0.005)
     .map((d) => ({ ...d, bal: d.balance, min: d.minPayment > 0 ? d.minPayment : defaultMinPayment(d.balance, d.apr), interest: 0, paidOffMonth: null }));
@@ -201,7 +208,13 @@ export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', max
       totalInterest += i;
     }
     let left = budget;
+    let extra = 0;
     for (const d of ds) d.paid = 0;
+    if (strategy !== 'minimum') {
+      for (const x of extras) {
+        if (x.type === 'increase' && month >= x.start && (!x.end || month <= x.end)) { left += x.amount; extra += x.amount; }
+      }
+    }
     for (const d of ds) {
       if (d.bal <= 0.005) continue;
       const p = Math.min(d.min, d.bal, Math.max(0, left));
@@ -211,6 +224,21 @@ export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', max
       totalPaid += p;
     }
     if (strategy !== 'minimum') {
+      // Lump sums land after minimums: targeted card first, any remainder joins the extra pool.
+      for (const x of extras) {
+        if (x.type !== 'lump' || x.start !== month) continue;
+        let amt = x.amount;
+        extra += amt;
+        const t = x.target && ds.find((d) => d.id === x.target && d.bal > 0.005);
+        if (t) {
+          const p = Math.min(amt, t.bal);
+          t.bal -= p;
+          t.paid += p;
+          amt -= p;
+          totalPaid += p;
+        }
+        left += amt;
+      }
       for (const d of order()) {
         if (left <= 0.005) break;
         const p = Math.min(left, d.bal);
@@ -226,6 +254,7 @@ export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', max
       total: ds.reduce((s, d) => s + d.bal, 0),
       ...Object.fromEntries(ds.map((d) => [d.id, Math.max(0, d.bal)])),
       payments: Object.fromEntries(ds.map((d) => [d.id, d.paid])),
+      extra,
     });
   }
   const done = ds.every((d) => d.bal <= 0.005);

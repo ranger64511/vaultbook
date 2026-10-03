@@ -240,3 +240,10 @@ dialog.modal::backdrop { background: rgba(10, 10, 8, 0.45); backdrop-filter: blu
 .period-bar .period-month { height: 32px; font-size: 13px; margin-left: auto; margin-right: 12px; }
 @media (max-width: 900px) { .period-bar .period-month { margin-left: 0; } }
 tr.selected-row td { background: var(--accent-soft); }
+.nav-sub { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px 21px; padding-left: 12px; border-left: 1px solid var(--border-strong); }
+.nav-sublink { padding: 6px 10px; font-size: 13px; }
+/* Parent stays highlighted only as a label when a sub-page is active. */
+.nav-link.active:has(+ .nav-sub) { background: transparent; color: var(--text); }
+.compact-table th, .compact-table td { padding: 6px 6px; }
+.compact-table th:first-child, .compact-table td:first-child { padding-left: 0; }
+.compact-table input[type='month'] { width: 150px; }

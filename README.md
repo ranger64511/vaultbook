@@ -45,6 +45,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 | **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Plan to cancel* or *Keep*. Pick the month you expect each one to stop and see your planned savings month by month. Switch to *By month* to see which recurring charges were billed in any month and their total. **Planning only: Vault Book never cancels anything.** |
 | **Budget** | Monthly budgets per category, each marked **Need** or **Want**. One click suggests amounts from your 3-month averages, and spending is compared with the 50/30/20 guideline. |
 | **Debt payoff plan** | **Avalanche** (highest APR first) vs. **Snowball** (smallest balance first). Shows your debt-free date, total interest, interest saved vs. paying only minimums, a month-by-month payment schedule (pick any month to see exactly what to pay on each card), and "speed it up" scenarios. |
+| **Payoff theory** | A sandbox under *Debt payoff plan* for "what if" ideas: add **lump sums** (aimed at a specific card or the focus card) and **monthly increases** (with optional end dates), change the monthly payment or strategy, and compare against your main plan: debt-free date, interest saved, per-card payoff dates and a month-by-month schedule. Save theories by name and **apply** one to your main plan. **Planning only: Vault Book never makes payments.** |
 | **Appearance** | Modern responsive UI with Light, Dark, and Auto (follows your OS) themes. |
 
 ## Requirements
@@ -79,7 +80,8 @@ On first launch you'll create a username and password.
 3. **Clean up categories.** Fix any miscategorized transactions on the *Transactions* page. Vault Book offers to remember the merchant.
 4. **Review recurring charges.** Mark subscriptions you want to drop as *Plan to cancel* and choose when you expect to stop them. Vault Book shows how much you’d save each month. Then **cancel each one yourself** directly with the company. Vault Book does not contact merchants, banks, or card issuers.
 5. **Set a budget.** On *Budget*, click **Suggest from history**, adjust, and **Save**. Use **+ Category** to add your own categories.
-6. **Plan your payoff.** On *Debt payoff plan*, set how much you can put toward cards each month and compare strategies.
+6. **Plan your payoff.** On *Debt payoff plan → Main plan*, set how much you can put toward cards each month and compare strategies.
+7. **Try payoff theories.** On *Debt payoff plan → Payoff theory*, test lump sums and payment increases, save the ones you like, and apply the best to your main plan. Then make those payments yourself.
 
 ### Try it with demo data
 

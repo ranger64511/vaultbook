@@ -1,39 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Target, CalendarCheck, Flame, PiggyBank, AlertTriangle, Info } from 'lucide-react';
+import { Target, CalendarCheck, Flame, PiggyBank, AlertTriangle, Info, FlaskConical, X } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented } from '../components/ui.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
+import PayoffSchedule from '../components/PayoffSchedule.jsx';
 import { useChartColors } from '../lib/theme.js';
-import { simulatePayoff, detectRecurring, summarize, defaultMinPayment } from '../lib/analytics.js';
-import { money, money0, moneyCompact, monthsFromNow, monthLabel, addMonths, currentMonth } from '../lib/format.js';
-import MonthPicker from '../components/MonthPicker.jsx';
-
-const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
-
-const duration = (m) => {
-  if (!Number.isFinite(m)) return 'Never at this rate';
-  const y = Math.floor(m / 12), r = m % 12;
-  return [y && `${y} yr${y > 1 ? 's' : ''}`, r && `${r} mo`].filter(Boolean).join(' ') || '0 mo';
-};
-
-const monthTicks = (len) => {
-  const step = len <= 12 ? 2 : len <= 36 ? 6 : len <= 120 ? 12 : 24;
-  return Array.from({ length: Math.floor(len / step) + 1 }, (_, i) => i * step);
-};
-const tickLabel = (m) => (m === 0 ? "Now" : m % 12 === 0 ? `${m / 12}y` : `${m}mo`);
+import { simulatePayoff, detectRecurring, summarize } from '../lib/analytics.js';
+import { money, money0, moneyCompact, monthsFromNow } from '../lib/format.js';
+import {
+  duration, monthTicks, tickLabel, payoffCards, debtsFrom, minimumTotal, mainPlanSettings, toSimExtras, describeAdjustment, totalExtra,
+} from '../lib/payoff.js';
 
 export default function Payoff() {
   const { data, mutate } = useData();
   const c = useChartColors();
-  const cards = data.accounts.filter((a) => a.type === 'credit' && a.balance > 0);
-  const debts = cards.map((a) => ({ id: a.id, name: a.name, balance: a.balance, apr: a.apr || 0, minPayment: a.minPayment || 0 }));
-  const minTotal = debts.reduce((s, d) => s + (d.minPayment || defaultMinPayment(d.balance, d.apr)), 0);
+  const cards = payoffCards(data.accounts);
+  const debts = debtsFrom(cards);
+  const debtsKey = JSON.stringify(debts);
+  const minTotal = minimumTotal(debts);
+  const main = mainPlanSettings(data.settings, debts);
+  const adjustments = main.adjustments;
+  const extras = useMemo(() => toSimExtras(adjustments), [JSON.stringify(adjustments)]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [budget, setBudget] = useState(() => data.settings.payoffBudget || Math.ceil((minTotal * 1.5) / 10) * 10);
-  const [strategy, setStrategy] = useState(data.settings.payoffStrategy || 'avalanche');
-  const [viewMonth, setViewMonth] = useState(null); // month shown in the month-by-month plan
+  const [budget, setBudget] = useState(main.budget);
+  const [strategy, setStrategy] = useState(main.strategy);
+  // Keep in sync when a Payoff theory is applied from the other page.
+  useEffect(() => { setBudget(main.budget); setStrategy(main.strategy); }, [data.settings.payoffBudget, data.settings.payoffStrategy]); // eslint-disable-line react-hooks/exhaustive-deps
   // Persist the user's choices (debounced).
   useEffect(() => {
     if (budget === data.settings.payoffBudget && strategy === data.settings.payoffStrategy) return;
@@ -41,9 +35,9 @@ export default function Payoff() {
     return () => clearTimeout(t);
   }, [budget, strategy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const plan = useMemo(() => simulatePayoff(debts, budget, strategy), [JSON.stringify(debts), budget, strategy]); // eslint-disable-line
-  const minOnly = useMemo(() => simulatePayoff(debts, 0, 'minimum'), [JSON.stringify(debts)]); // eslint-disable-line
-  const other = useMemo(() => simulatePayoff(debts, budget, strategy === 'avalanche' ? 'snowball' : 'avalanche'), [JSON.stringify(debts), budget, strategy]); // eslint-disable-line
+  const plan = useMemo(() => simulatePayoff(debts, budget, strategy, 600, extras), [debtsKey, budget, strategy, extras]); // eslint-disable-line
+  const minOnly = useMemo(() => simulatePayoff(debts, 0, 'minimum'), [debtsKey]); // eslint-disable-line
+  const other = useMemo(() => simulatePayoff(debts, budget, strategy === 'avalanche' ? 'snowball' : 'avalanche', 600, extras), [debtsKey, budget, strategy, extras]); // eslint-disable-line
 
   // Money that could be redirected to cards.
   const cancelSavings = useMemo(() => detectRecurring(data.transactions, data.categories)
@@ -53,15 +47,6 @@ export default function Payoff() {
     if (!months.length) return 0;
     return summarize(data.transactions.filter((t) => months.some((m) => t.date.startsWith(m))), data.categories).wants / months.length;
   }, [data.transactions, data.categories]);
-
-  // Payment month i of the plan is i months from now; month 0 is the starting balance.
-  const thisMonth = currentMonth();
-  const lastIdx = Math.max(1, plan.schedule.length - 1);
-  const firstPay = addMonths(thisMonth, 1);
-  const lastPay = addMonths(thisMonth, lastIdx);
-  const shown = viewMonth && viewMonth >= firstPay ? (viewMonth > lastPay ? lastPay : viewMonth) : firstPay;
-  const shownIdx = monthsBetween(thisMonth, shown);
-  const selectedRow = plan.schedule[shownIdx];
 
   if (!cards.length) {
     return (
@@ -74,6 +59,7 @@ export default function Payoff() {
     );
   }
 
+  const cardName = (id) => cards.find((a) => a.id === id)?.name;
   const missingApr = cards.filter((a) => !a.apr);
   const tooLow = budget < minTotal - 0.005;
   const horizon = Math.min(Math.max(Number.isFinite(plan.months) ? plan.months : 120, 6), 360);
@@ -92,11 +78,15 @@ export default function Payoff() {
     avgWants > 20 && { label: `Cut “wants” spending by 25% (+${money0(avgWants * 0.25)}/mo)`, extra: avgWants * 0.25 },
     { label: '+$100/month', extra: 100 },
     { label: '+$250/month', extra: 250 },
-  ].filter(Boolean).map((b) => ({ ...b, sim: simulatePayoff(debts, budget + b.extra, strategy) }));
+  ].filter(Boolean).map((b) => ({ ...b, sim: simulatePayoff(debts, budget + b.extra, strategy, 600, extras) }));
+
+  const removeAdjustment = (id) => mutate('/settings', { method: 'PUT', body: { payoffAdjustments: adjustments.filter((a) => a.id !== id) } }, 'Removed from your main plan');
 
   return (
     <>
-      <PageHead title="Debt payoff plan" subtitle="See how fast your cards reach $0 and what each extra dollar saves." />
+      <PageHead title="Debt payoff plan" subtitle="Your main plan: how fast your cards reach $0 and what each extra dollar saves.">
+        <Link className="btn" to="/payoff/theory"><FlaskConical size={16} /> Try a payoff theory</Link>
+      </PageHead>
 
       <Card>
         <div className="row" style={{ gap: 24, alignItems: 'flex-end' }}>
@@ -120,6 +110,27 @@ export default function Payoff() {
         </p>
         {tooLow && <div className="error-box mt"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> This is less than your combined minimum payments ({money(minTotal)}). Missing minimums causes late fees and credit damage.</div>}
         {missingApr.length > 0 && <div className="warn-box mt">Add the APR for {missingApr.map((a) => a.name).join(', ')} on the <Link to="/accounts">Accounts</Link> page for an accurate plan (currently assumed 0%).</div>}
+
+        <div className="mt" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <div className="spread">
+            <h3>Extra payments in your main plan</h3>
+            <Link className="btn ghost sm" to="/payoff/theory"><FlaskConical size={14} /> {adjustments.length ? 'Edit in Payoff theory' : 'Add some in Payoff theory'}</Link>
+          </div>
+          {adjustments.length ? (
+            <div className="stack" style={{ gap: 6, marginTop: 8 }}>
+              {adjustments.map((a) => (
+                <div key={a.id} className="row" style={{ gap: 8 }}>
+                  <span className={`badge ${a.type === 'lump' ? 'income' : 'need'}`}>{a.type === 'lump' ? 'Lump sum' : 'Monthly increase'}</span>
+                  <span>{describeAdjustment(a, cardName)}</span>
+                  <button className="btn ghost icon sm" aria-label="Remove from main plan" title="Remove from main plan" onClick={() => removeAdjustment(a.id)}><X size={14} /></button>
+                </div>
+              ))}
+              <p className="faint">{money0(totalExtra(plan))} in extra payments over the life of the plan. Make these payments yourself; Vault Book doesn’t move money.</p>
+            </div>
+          ) : (
+            <p className="faint" style={{ marginTop: 6 }}>None yet. Use Payoff theory to test lump sums (like a tax refund or bonus) or raising your monthly payment, then apply the ones you like here.</p>
+          )}
+        </div>
       </Card>
 
       <div className="grid g-4 mt">
@@ -173,7 +184,7 @@ export default function Payoff() {
                 {ordered.map((d, i) => (
                   <tr key={d.id}>
                     <td><span className="badge">{i + 1}</span></td>
-                    <td><span className="row" style={{ gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}><span className="swatch" style={{ background: colorOf(d.id) }} /><b>{d.name}</b></span></td>
+                    <td><span className="row" style={{ gap: 8, flexWrap: 'nowrap', whiteSpace: 'nowrap' }}><span className="swatch" style={{ background: colorOf(d.id) }} /><b>{d.name}</b></span></td>
                     <td className="amount">{money(d.startBalance)}</td>
                     <td className="amount">{d.apr}%</td>
                     <td className="amount">{money(d.min)}</td>
@@ -196,40 +207,16 @@ export default function Payoff() {
               </div>
             </div>
           ))}
-          <button className="btn sm mt" onClick={() => setBudget(Math.round(budget + cancelSavings + avgWants * 0.25))}>Apply the first two</button>
+          <div className="row mt">
+            <button className="btn sm" onClick={() => setBudget(Math.round(budget + cancelSavings + avgWants * 0.25))}>Apply the first two</button>
+            <Link className="btn sm ghost" to="/payoff/theory">More in Payoff theory</Link>
+          </div>
         </Card>
       </div>
 
-      <Card className="mt flush" title="Month-by-month plan" subtitle={`What to pay on each card, 12 months starting ${monthLabel(shown, 'long')}`}
-        action={<MonthPicker value={shown} onChange={setViewMonth} min={firstPay} max={lastPay} />}>
-        {selectedRow && (
-          <div className="period-bar">
-            <b>{monthLabel(shown, 'long')}:</b> pay {money(Object.values(selectedRow.payments).reduce((s, p) => s + p, 0))} in total
-            {cards.filter((a) => selectedRow.payments[a.id] > 0.004).map((a) => <span key={a.id}> · {a.name} <b>{money(selectedRow.payments[a.id])}</b></span>)}
-            <span className="faint"> · {money(selectedRow.total)} left after this month{selectedRow.total <= 0.005 ? ', debt-free!' : ''}</span>
-          </div>
-        )}
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Month</th>{cards.map((a) => <th key={a.id} className="amount">{a.name}</th>)}<th className="amount">Remaining debt</th></tr></thead>
-            <tbody>
-              {plan.schedule.slice(shownIdx, shownIdx + 12).map((row) => (
-                <tr key={row.month} className={row.month === shownIdx ? 'selected-row' : ''}>
-                  <td className="faint">{monthsFromNow(row.month)}</td>
-                  {cards.map((a) => {
-                    const p = row.payments[a.id] || 0;
-                    const focus = p > (plan.debts.find((d) => d.id === a.id)?.min || 0) + 0.5;
-                    return <td key={a.id} className="amount">{p > 0 ? <span style={{ fontWeight: focus ? 650 : 400 }}>{money0(p)}</span> : <span className="faint">—</span>}</td>;
-                  })}
-                  <td className="amount"><b>{money0(row.total)}</b></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <PayoffSchedule plan={plan} cards={cards} />
 
-      <p className="faint mt row" style={{ gap: 6 }}><Info size={13} /> Estimates assume no new charges, fixed APRs and fixed minimum payments. This is a planning tool, not financial advice.</p>
+      <p className="faint mt row" style={{ gap: 6 }}><Info size={13} /> Estimates assume no new charges, fixed APRs and fixed minimum payments. Vault Book never makes payments for you. This is a planning tool, not financial advice.</p>
     </>
   );
 }
