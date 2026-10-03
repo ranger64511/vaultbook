@@ -94,6 +94,14 @@ export default function Transactions() {
   const later = range && matching.findLast((t) => t.date > range[1])?.date;
   const filtersOn = !!(q.trim() || account || category);
 
+  // Months that have transactions, plus the current month, newest first.
+  const months = useMemo(
+    () => [...new Set([today.slice(0, 7), ...data.transactions.map((t) => t.date.slice(0, 7))])].sort().reverse(),
+    [data.transactions, today],
+  );
+  // Jump to a month: today if it's the current month, otherwise its 1st (Week view lands on that month's first week).
+  const pickMonth = (m) => setAnchor(m === today.slice(0, 7) ? today : `${m}-01`);
+
   const groups = useMemo(() => {
     const out = [];
     const keyFn = { month: (t) => t.date.slice(0, 7), week: (t) => weekKey(t.date), day: (t) => t.date }[group] || (() => 'all');
@@ -152,6 +160,10 @@ export default function Transactions() {
               <h2 style={{ marginLeft: 6 }}>{periodTitle(view, anchor, today)}</h2>
               {!isCurrent && <button className="btn ghost sm" onClick={() => setAnchor(today)}>Today</button>}
             </div>
+            <select className="period-month" value={anchor.slice(0, 7)} onChange={(e) => pickMonth(e.target.value)} aria-label="Jump to month">
+              {!months.includes(anchor.slice(0, 7)) && <option value={anchor.slice(0, 7)}>{monthLabel(anchor.slice(0, 7), 'long')}</option>}
+              {months.map((m) => <option key={m} value={m}>{monthLabel(m, 'long')}</option>)}
+            </select>
             <div className="num" style={{ fontSize: 13 }}>
               <span className="pos">+{money(periodTotals.in)}</span><span className="faint"> in · </span>
               <span>−{money(periodTotals.out)}</span><span className="faint"> out</span>
