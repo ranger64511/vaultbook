@@ -76,7 +76,7 @@ export default function Dashboard() {
         <Stat icon={TrendingDown} label="Income this month" value={money(cur.income)}
           sub={<>Net <span className={cur.net >= 0 ? 'pos' : 'bad'}>{cur.net >= 0 ? '+' : ''}{money0(cur.net)}</span></>} />
         <Stat icon={Repeat} label="Recurring charges" value={`${money0(recurringMonthly)}/mo`}
-          sub={flagged.length ? <span className="pos">{money0(savings)}/mo flagged to cancel</span> : `${recurring.length} active subscriptions & bills`} />
+          sub={flagged.length ? <span className="pos">{money0(savings)}/mo planned to cancel</span> : `${recurring.length} active subscriptions & bills`} />
       </div>
 
       <div className="grid g-3-1 mt">

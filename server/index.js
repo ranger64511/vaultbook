@@ -51,7 +51,9 @@ function freshData() {
     transactions: [],
     categories: DEFAULT_CATEGORIES.map((c) => ({ ...c })),
     rules: [],
-    recurring: {}, // merchantKey -> { status: 'keep' | 'cancel' | 'ignore', note }
+    // merchantKey -> { status: 'keep' | 'cancel' | 'ignore', note, stopMonth }. 'cancel' is a plan only;
+    // Vault Book never contacts merchants or stops any charge.
+    recurring: {},
     imports: [],
     settings: { payoffBudget: 0, payoffStrategy: 'avalanche' },
   };
@@ -461,9 +463,17 @@ app.post('/api/recategorize', (req, res) => {
 // ----------------------------------------------------- recurring/settings -
 app.put('/api/recurring/:key', (req, res) => {
   const key = decodeURIComponent(req.params.key);
-  const { status, note } = req.body || {};
+  const { status, note, stopMonth } = req.body || {};
   if (!status) delete state.data.recurring[key];
-  else state.data.recurring[key] = { status, note: String(note || '').slice(0, 300) };
+  else if (!['keep', 'cancel', 'ignore'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  else {
+    state.data.recurring[key] = {
+      status,
+      note: String(note || '').slice(0, 300),
+      // 'cancel' only records a plan; YYYY-MM is when the user expects to have stopped the charge.
+      stopMonth: status === 'cancel' && /^\d{4}-(0[1-9]|1[0-2])$/.test(stopMonth || '') ? stopMonth : null,
+    };
+  }
   persist();
   res.json({ ok: true });
 });

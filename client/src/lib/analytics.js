@@ -137,6 +137,7 @@ export function detectRecurring(txs, categories) {
       kind: kind(cat),
       frequency: freq.id,
       frequencyLabel: freq.label,
+      periodDays: freq.days,
       amount: typical,
       lastAmount: last.amount,
       // Only meaningful for normally-fixed charges (e.g. a subscription price increase).
@@ -239,3 +240,39 @@ export function simulatePayoff(debts, monthlyBudget, strategy = 'avalanche', max
     order: strategy === 'minimum' ? [] : [...ds].sort((a, b) => (a.paidOffMonth ?? 1e9) - (b.paidOffMonth ?? 1e9)).map((d) => d.id),
   };
 }
+
+// ------------------------------------------------- planned cancellations --
+/**
+ * Projects the money freed up by charges the user PLANS to cancel.
+ * Nothing is cancelled by Vault Book; this only models the plan.
+ *
+ * Each planned item's future charges are walked forward on its real schedule,
+ * so a yearly subscription shows its saving in its renewal month. A charge
+ * counts as saved once its month is on or after the item's stop month.
+ *
+ * plans: [{ item (from detectRecurring), stopMonth: 'YYYY-MM' }]
+ * Returns one row per month: { key, total, items: [{ key, name, amount }] }.
+ */
+export function projectPlannedSavings(plans, months = 12, today = new Date()) {
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const keys = Array.from({ length: months }, (_, i) => isoDate(new Date(start.getFullYear(), start.getMonth() + i, 1)).slice(0, 7));
+  const rows = new Map(keys.map((k) => [k, { key: k, total: 0, items: [] }]));
+  const end = new Date(start.getFullYear(), start.getMonth() + months, 1);
+  for (const { item, stopMonth } of plans) {
+    const step = Math.round(item.periodDays || 30.44);
+    const d = toDate(item.next);
+    // An overdue "next" date rolls forward to the first charge from this month on.
+    while (d < start) d.setDate(d.getDate() + step);
+    for (; d < end; d.setDate(d.getDate() + step)) {
+      const k = isoDate(d).slice(0, 7);
+      if (stopMonth && k < stopMonth) continue;
+      const row = rows.get(k);
+      row.total += item.amount;
+      row.items.push({ key: item.key, name: item.name, amount: item.amount });
+    }
+  }
+  return keys.map((k) => rows.get(k));
+}
+
+/** The month a planned cancellation takes effect: chosen month, else the next expected charge. */
+export const plannedStopMonth = (item, plan) => plan?.stopMonth || item.next.slice(0, 7);

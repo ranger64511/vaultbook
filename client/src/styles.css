@@ -226,6 +226,8 @@ dialog.modal::backdrop { background: rgba(10, 10, 8, 0.45); backdrop-filter: blu
 .tooltip .t-row b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .tooltip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
 .recharts-surface:focus, .recharts-wrapper:focus { outline: none; }
+/* Recharts focuses internal, non-tabbable layers on click; their outline is just noise. */
+.recharts-wrapper [tabindex='-1']:focus { outline: none; }
 
 .list-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
 .list-row:last-child { border-bottom: 0; }

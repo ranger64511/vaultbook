@@ -2,7 +2,7 @@
 
 **A private, self-hosted personal finance tracker that runs entirely on your own computer.**
 
-Import your bank and credit card statements and Vault Book will break out every transaction by month and week, show how much you owe on each card, find recurring charges you might cancel, help you build a needs-vs-wants budget, and lay out a plan to pay your credit cards down to $0.
+Import your bank and credit card statements and Vault Book will break out every transaction by month and week, show how much you owe on each card, find recurring charges you might want to cancel (you cancel them yourself; Vault Book only helps you plan), help you build a needs-vs-wants budget, and lay out a plan to pay your credit cards down to $0.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.13-green)
@@ -42,7 +42,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 | **Transactions** | Search, filter by account, category, or month, and group by **month** or **week** with money-in and money-out totals. Re-categorize a transaction and Vault Book can remember the merchant for next time. |
 | **Accounts** | Checking, savings, money market, CDs, cash, and credit cards. Enter a savings APY and Vault Book estimates interest per month and year, the balance including interest to date, and a CD's value at maturity. |
 | **Dashboard** | Total card debt and utilization, 12-month income vs. spending, weekly needs vs. wants, top spending categories, and recent activity. |
-| **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Cancel* or *Keep* to total up your savings. |
+| **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Plan to cancel* or *Keep*. Pick the month you expect each one to stop and see your planned savings month by month. **Planning only: Vault Book never cancels anything.** |
 | **Budget** | Monthly budgets per category, each marked **Need** or **Want**. One click suggests amounts from your 3-month averages, and spending is compared with the 50/30/20 guideline. |
 | **Debt payoff plan** | **Avalanche** (highest APR first) vs. **Snowball** (smallest balance first). Shows your debt-free date, total interest, interest saved vs. paying only minimums, a month-by-month payment schedule, and "speed it up" scenarios. |
 | **Appearance** | Modern responsive UI with Light, Dark, and Auto (follows your OS) themes. |
@@ -77,7 +77,7 @@ On first launch you'll create a username and password.
 1. **Add your accounts.** Go to *Accounts & cards* and add each checking, savings, money market, CD, cash, and credit card account. For savings-type accounts, add the APY to see the interest you earn. For cards, include the APR and minimum payment so the payoff plan is accurate.
 2. **Import statements.** Go to *Import statements*, pick the account, and drop in a file. Review the preview, then click **Import**. Importing 2–3 months or more makes recurring-charge detection work well.
 3. **Clean up categories.** Fix any miscategorized transactions on the *Transactions* page. Vault Book offers to remember the merchant.
-4. **Review recurring charges.** Mark subscriptions you want to drop as *Cancel*. Vault Book totals the monthly and yearly savings.
+4. **Review recurring charges.** Mark subscriptions you want to drop as *Plan to cancel* and choose when you expect to stop them. Vault Book shows how much you’d save each month. Then **cancel each one yourself** directly with the company. Vault Book does not contact merchants, banks, or card issuers.
 5. **Set a budget.** On *Budget*, click **Suggest from history**, adjust, and **Save**. Use **+ Category** to add your own categories.
 6. **Plan your payoff.** On *Debt payoff plan*, set how much you can put toward cards each month and compare strategies.
 
@@ -192,6 +192,7 @@ npm start          # serve the built app → http://localhost:4310
 ## Disclaimer
 
 - This software is provided **"as is", without warranty of any kind**, and **without support**. Use it at your own risk.
+- **Vault Book never takes action on your accounts.** It does not cancel subscriptions, make payments, move money, or contact any bank, card issuer, or merchant. Features like *Plan to cancel* and the debt payoff plan are planning aids only. You are responsible for carrying out any changes yourself.
 - Vault Book is a personal budgeting and planning tool. It is **not financial, tax, or legal advice**. Payoff projections are estimates that assume no new charges, fixed APRs, and fixed minimum payments.
 - Vault Book is not affiliated with any bank or card issuer. Bank and merchant names appear only in categorization rules and fictional sample data.
 - Built with the assistance of Claude (Anthropic). Review the code yourself before trusting it with sensitive data.

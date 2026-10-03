@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { simulatePayoff, detectRecurring } from './analytics.js';
+import { simulatePayoff, detectRecurring, projectPlannedSavings } from './analytics.js';
 
 const debts = [
   { id: 'a', name: 'High APR', balance: 2000, apr: 29.99, minPayment: 60 },
@@ -31,4 +31,26 @@ test('recurring: detects a monthly subscription with a stable amount', () => {
   assert.equal(r.frequency, 'monthly');
   assert.equal(r.amount, 15.49);
   assert.ok(Math.abs(r.yearly - 185.88) < 0.5);
+});
+
+test('planned savings: monthly charge counts from the stop month on', () => {
+  const item = { key: 'N', name: 'Netflix', amount: 15.49, periodDays: 30.44, next: '2026-10-04' };
+  const rows = projectPlannedSavings([{ item, stopMonth: '2026-12' }], 12, new Date(2026, 9, 3));
+  assert.equal(rows[0].key, '2026-10');
+  assert.equal(rows[0].total, 0); // Oct and Nov still charged
+  assert.equal(rows[1].total, 0);
+  assert.equal(rows[2].total, 15.49); // Dec onward saved
+  assert.equal(rows.filter((r) => r.total > 0).length, 10);
+});
+
+test('planned savings: a yearly charge shows up only in its renewal month', () => {
+  const item = { key: 'A', name: 'Annual', amount: 99, periodDays: 365, next: '2027-03-15' };
+  const rows = projectPlannedSavings([{ item, stopMonth: '2026-10' }], 12, new Date(2026, 9, 3));
+  assert.deepEqual(rows.filter((r) => r.total > 0).map((r) => r.key), ['2027-03']);
+});
+
+test('planned savings: an overdue next date rolls forward', () => {
+  const item = { key: 'W', name: 'Weekly', amount: 10, periodDays: 7, next: '2026-09-01' };
+  const rows = projectPlannedSavings([{ item, stopMonth: '2026-10' }], 1, new Date(2026, 9, 3));
+  assert.ok(rows[0].total >= 40); // 4–5 weekly charges in October
 });

@@ -75,7 +75,7 @@ export default function Payoff() {
   const colorOf = (id) => c.series[cards.findIndex((a) => a.id === id) % 8];
 
   const boosts = [
-    cancelSavings > 1 && { label: `Redirect cancelled subscriptions (+${money0(cancelSavings)}/mo)`, extra: cancelSavings },
+    cancelSavings > 1 && { label: `Redirect planned cancellations once you’ve cancelled them (+${money0(cancelSavings)}/mo)`, extra: cancelSavings },
     avgWants > 20 && { label: `Cut “wants” spending by 25% (+${money0(avgWants * 0.25)}/mo)`, extra: avgWants * 0.25 },
     { label: '+$100/month', extra: 100 },
     { label: '+$250/month', extra: 250 },
