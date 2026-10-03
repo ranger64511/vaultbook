@@ -30,3 +30,17 @@ test('no interest for credit cards, cash, zero APY or empty balance', () => {
   assert.equal(interestInfo({ type: 'savings', balance: 500, apy: 0 }), null);
   assert.equal(interestInfo({ type: 'savings', balance: 0, apy: 4 }), null);
 });
+
+import { assetInfo, isAsset, hasTransactions } from './accounts.js';
+
+test('assets: equity after a linked loan, and expected yearly change', () => {
+  const accounts = [{ id: 'm', type: 'mortgage', balance: 212000 }, { id: 'h', type: 'home', balance: 350000, appreciation: 3, linkedLoan: 'm' }];
+  const i = assetInfo(accounts[1], accounts);
+  assert.equal(i.equity, 138000);
+  assert.equal(i.owed, 212000);
+  assert.equal(i.yearlyChange, 10500);
+  const car = assetInfo({ type: 'vehicle', balance: 20000, appreciation: -15 }, accounts);
+  assert.equal(car.equity, 20000);
+  assert.equal(car.yearlyChange, -3000);
+  assert.ok(isAsset('home') && !hasTransactions('vehicle') && hasTransactions('checking'));
+});

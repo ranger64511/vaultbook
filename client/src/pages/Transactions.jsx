@@ -5,6 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Amount, Modal, Segmented, CategorySelect } from '../components/ui.jsx';
 import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate, dayLabel, toDate } from '../lib/format.js';
 import { kindOf } from '../lib/analytics.js';
+import { hasTransactions } from '../lib/accounts.js';
 
 const PAGE = 400;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
@@ -266,7 +267,7 @@ function AddTransaction({ open, onClose }) {
     setError('');
     try {
       const amt = Math.abs(Number(form.amount)) * (form.type === 'out' ? -1 : 1);
-      await mutate('/transactions', { method: 'POST', body: { ...form, accountId: form.accountId || data.accounts[0]?.id, amount: amt, category: form.category || undefined } }, 'Transaction added');
+      await mutate('/transactions', { method: 'POST', body: { ...form, accountId: form.accountId || data.accounts.find((a) => hasTransactions(a.type))?.id, amount: amt, category: form.category || undefined } }, 'Transaction added');
       setForm((f) => ({ ...f, description: '', amount: '' }));
       onClose();
     } catch (e) { setError(e.message); }
@@ -283,7 +284,7 @@ function AddTransaction({ open, onClose }) {
         </div>
         <div className="field"><label>Date</label><input type="date" value={form.date} onChange={set('date')} /></div>
         <div className="field"><label>Account</label>
-          <select value={form.accountId} onChange={set('accountId')}>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          <select value={form.accountId} onChange={set('accountId')}>{data.accounts.filter((a) => hasTransactions(a.type)).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
         </div>
         <div className="field full"><label>Category</label>
           <select value={form.category} onChange={set('category')}>

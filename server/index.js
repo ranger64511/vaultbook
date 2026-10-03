@@ -297,24 +297,28 @@ app.get('/api/data', (req, res) => res.json(state.data));
 const ACCOUNT_TYPES = [
   'checking', 'savings', 'money-market', 'cd', 'cash', 'other', 'brokerage', 'retirement',
   'credit', 'auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'medical-debt', 'other-debt',
+  'home', 'vehicle', 'property',
 ];
 const DEBT_TYPES = new Set(['credit', 'auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'medical-debt', 'other-debt']);
 const isDebt = (type) => DEBT_TYPES.has(type);
 const INVESTMENT_TYPES = new Set(['brokerage', 'retirement']);
 const ACCOUNT_FIELDS = [
   'name', 'type', 'institution', 'balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'last4', 'maturityDate',
-  'expectedReturn', 'withdrawalCost', 'excludeFromPayoff',
+  'expectedReturn', 'withdrawalCost', 'excludeFromPayoff', 'appreciation', 'linkedLoan',
 ];
 function pickAccount(body) {
   const a = {};
   for (const k of ACCOUNT_FIELDS) if (body[k] !== undefined) a[k] = body[k];
-  for (const k of ['balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'expectedReturn', 'withdrawalCost']) {
+  for (const k of ['balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'expectedReturn', 'withdrawalCost', 'appreciation']) {
     if (a[k] !== undefined) a[k] = a[k] === '' || a[k] === null || !Number.isFinite(Number(a[k])) ? null : Number(a[k]);
   }
   if (a.apy != null) a.apy = Math.min(100, Math.max(0, a.apy));
   if (a.expectedReturn != null) a.expectedReturn = Math.min(50, Math.max(-50, a.expectedReturn));
   if (a.withdrawalCost != null) a.withdrawalCost = Math.min(100, Math.max(0, a.withdrawalCost));
   if (a.excludeFromPayoff !== undefined) a.excludeFromPayoff = a.excludeFromPayoff === true;
+  if (a.appreciation != null) a.appreciation = Math.min(100, Math.max(-100, a.appreciation));
+  // A home or vehicle can point at the loan against it, to show equity.
+  if (a.linkedLoan !== undefined) a.linkedLoan = state.data.accounts.some((x) => x.id === a.linkedLoan && isDebt(x.type)) ? a.linkedLoan : null;
   if (a.maturityDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(a.maturityDate || '')) a.maturityDate = null;
   if (a.type && !ACCOUNT_TYPES.includes(a.type)) a.type = 'checking';
   return a;
@@ -342,6 +346,7 @@ app.put('/api/accounts/:id', (req, res) => {
 app.delete('/api/accounts/:id', (req, res) => {
   const id = req.params.id;
   state.data.accounts = state.data.accounts.filter((a) => a.id !== id);
+  for (const a of state.data.accounts) if (a.linkedLoan === id) a.linkedLoan = null;
   state.data.transactions = state.data.transactions.filter((t) => t.accountId !== id);
   for (const imp of state.data.imports) if (imp.accountId === id) vault.deleteFile(state.userId, imp.id);
   state.data.imports = state.data.imports.filter((i) => i.accountId !== id);

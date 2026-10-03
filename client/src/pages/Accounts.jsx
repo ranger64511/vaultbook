@@ -1,28 +1,29 @@
 import { useState } from 'react';
 import {
   CreditCard, Landmark, PiggyBank, Coins, CalendarClock, Banknote, Wallet, Plus, Pencil, Trash2, TrendingUp,
-  Car, Home, GraduationCap, HandCoins, Stethoscope, Receipt, LineChart, Briefcase, Scale,
+  Car, Home, GraduationCap, HandCoins, Stethoscope, Receipt, LineChart, Briefcase, Scale, Building2, CarFront, Gem,
 } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Modal, Stat } from '../components/ui.jsx';
 import { money, money0, pct, longDate } from '../lib/format.js';
-import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment } from '../lib/accounts.js';
+import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment, isAsset, assetInfo } from '../lib/accounts.js';
 
 const ICON = {
   credit: CreditCard, checking: Landmark, savings: PiggyBank, 'money-market': Coins, cd: CalendarClock, cash: Banknote, other: Wallet,
   brokerage: LineChart, retirement: Briefcase,
+  home: Building2, vehicle: CarFront, property: Gem,
   'auto-loan': Car, mortgage: Home, 'student-loan': GraduationCap, 'personal-loan': HandCoins, 'medical-debt': Stethoscope, 'other-debt': Receipt,
 };
 
 const PLACEHOLDER = {
-  bank: 'e.g. High-Yield Savings', investment: 'e.g. Retirement 401(k)', card: 'e.g. Rewards Visa', loan: 'e.g. Car loan',
+  bank: 'e.g. High-Yield Savings', investment: 'e.g. Retirement 401(k)', card: 'e.g. Rewards Visa', loan: 'e.g. Car loan', asset: 'e.g. Our house',
 };
 
 export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }) {
-  const { mutate } = useData();
+  const { data, mutate } = useData();
   const [f, setF] = useState(() => ({
     name: '', type: 'checking', institution: '', balance: '', apr: '', apy: '', minPayment: '', creditLimit: '', dueDay: '', last4: '',
-    maturityDate: '', expectedReturn: '', withdrawalCost: '', excludeFromPayoff: false,
+    maturityDate: '', expectedReturn: '', withdrawalCost: '', excludeFromPayoff: false, appreciation: '', linkedLoan: '',
     ...Object.fromEntries(Object.entries(account || {}).map(([k, v]) => [k, v ?? ''])),
   }));
   const [error, setError] = useState('');
@@ -32,6 +33,9 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
   const debt = isDebt(f.type);
   const card = f.type === 'credit';
   const invest = isInvestment(f.type);
+  const asset = isAsset(f.type);
+  const loans = data.accounts.filter((a) => isDebt(a.type) && a.type !== 'credit' && a.id !== account?.id);
+  const assetPreview = asset ? assetInfo({ ...f, balance: f.balance, appreciation: f.appreciation }, data.accounts) : null;
   const interest = earnsInterest(f.type);
   const preview = interest ? interestInfo({ ...f, balanceAsOf: null }) : null;
   const ret = Number(f.expectedReturn) || 0;
@@ -47,6 +51,8 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
       if (!card) body.creditLimit = null;
       if (!interest) body.apy = null;
       if (!invest) Object.assign(body, { expectedReturn: null, withdrawalCost: null });
+      if (!asset) Object.assign(body, { appreciation: null, linkedLoan: null });
+      else body.linkedLoan = body.linkedLoan || null;
       if (f.type !== 'cd') body.maturityDate = null;
       body.excludeFromPayoff = !!body.excludeFromPayoff;
       const saved = await mutate(account ? `/accounts/${account.id}` : '/accounts', { method: account ? 'PUT' : 'POST', body }, account ? 'Account updated' : 'Account added');
@@ -66,13 +72,37 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
           ))}
         </select>
       </div>
-      <div className="field"><label>{f.type === 'cash' ? 'Where it’s kept' : group === 'loan' ? 'Lender' : invest ? 'Provider' : 'Bank / issuer'}</label>
-        <input value={f.institution} onChange={set('institution')} placeholder="Optional" />
-      </div>
-      <div className="field"><label>{debt ? 'Current balance owed' : invest ? 'Current value' : 'Current balance'}</label>
+      {!asset && (
+        <div className="field"><label>{f.type === 'cash' ? 'Where it’s kept' : group === 'loan' ? 'Lender' : invest ? 'Provider' : 'Bank / issuer'}</label>
+          <input value={f.institution} onChange={set('institution')} placeholder="Optional" />
+        </div>
+      )}
+      <div className="field"><label>{debt ? 'Current balance owed' : asset ? 'Estimated value' : invest ? 'Current value' : 'Current balance'}</label>
         <input type="number" step="0.01" value={f.balance} onChange={set('balance')} placeholder="0.00" />
+        {asset && <span className="hint">What it would sell for today, e.g. from a home-value or car-value website.</span>}
       </div>
-      {f.type !== 'cash' && <div className="field"><label>Last 4 digits</label><input value={f.last4} onChange={set('last4')} maxLength={4} inputMode="numeric" placeholder="Optional" /></div>}
+      {asset && (
+        <>
+          <div className="field"><label>Expected yearly change %</label>
+            <input type="number" step="0.5" min="-100" max="100" value={f.appreciation} onChange={set('appreciation')} placeholder={`e.g. ${type.defaultChange}`} />
+            <span className="hint">{type.changeHint}</span>
+          </div>
+          <div className="field"><label>Loan against it</label>
+            <select value={f.linkedLoan || ''} onChange={set('linkedLoan')}>
+              <option value="">None (owned outright)</option>
+              {loans.map((l) => <option key={l.id} value={l.id}>{l.name} ({typeLabel(l.type, true)})</option>)}
+            </select>
+            <span className="hint">Link the mortgage or car loan to see your equity.</span>
+          </div>
+          {assetPreview && assetPreview.value > 0 && (
+            <div className="info-box full">
+              {assetPreview.loan ? <>Equity: <b>{money(assetPreview.equity)}</b> (worth {money(assetPreview.value)}, {money(assetPreview.owed)} still owed on {assetPreview.loan.name}). </> : null}
+              {assetPreview.change !== 0 && <>Expected to {assetPreview.change > 0 ? 'gain' : 'lose'} about <b>{money(Math.abs(assetPreview.yearlyChange))}</b> in value this year.</>}
+            </div>
+          )}
+        </>
+      )}
+      {f.type !== 'cash' && !asset && <div className="field"><label>Last 4 digits</label><input value={f.last4} onChange={set('last4')} maxLength={4} inputMode="numeric" placeholder="Optional" /></div>}
 
       {interest && (
         <div className="field"><label>Interest rate (APY %)</label>
@@ -158,10 +188,13 @@ export default function Accounts() {
   const investments = byGroup('investment');
   const cards = byGroup('card');
   const loans = byGroup('loan');
+  const assets = byGroup('asset');
   const interest = new Map(banks.map((a) => [a.id, interestInfo(a)]));
   const cash = banks.reduce((s, a) => s + (interest.get(a.id)?.estimatedToday ?? (a.balance || 0)), 0);
   const invested = investments.reduce((s, a) => s + (a.balance || 0), 0);
   const debt = [...cards, ...loans].reduce((s, a) => s + (a.balance || 0), 0);
+  const property = assets.reduce((s, a) => s + (a.balance || 0), 0);
+  const equity = assets.reduce((s, a) => s + assetInfo(a, data.accounts).equity, 0);
   const yearly = [...interest.values()].reduce((s, i) => s + (i?.yearly || 0), 0);
 
   const actions = (a) => (
@@ -176,20 +209,21 @@ export default function Accounts() {
 
   return (
     <>
-      <PageHead title="Accounts" subtitle="Bank accounts, savings, investments, credit cards and loans.">
+      <PageHead title="Accounts" subtitle="Bank accounts, savings, investments, property, credit cards and loans.">
         <button className="btn primary" onClick={() => setEditing('new')}><Plus size={16} /> Add account</button>
       </PageHead>
 
       {!data.accounts.length ? (
         <Card><Empty icon={CreditCard} title="No accounts yet" action={<button className="btn primary" onClick={() => setEditing('new')}>Add your first account</button>}>
-          Add your checking, savings, investment, credit card and loan accounts.
+          Add your checking, savings, investment, credit card and loan accounts, plus your home, vehicles and other property.
         </Empty></Card>
       ) : (
         <div className="grid g-4">
           <Stat icon={PiggyBank} label="Bank & cash" value={money0(cash)} sub={yearly > 0 ? <span className="pos">+{money(yearly)}/yr interest</span> : `${banks.length} account${banks.length === 1 ? '' : 's'}`} />
           <Stat icon={TrendingUp} label="Investments" value={money0(invested)} sub={`${investments.length} account${investments.length === 1 ? '' : 's'}`} />
+          {assets.length > 0 && <Stat icon={Building2} label="Property & assets" value={money0(property)} sub={`${money0(equity)} equity after linked loans`} />}
           <Stat icon={CreditCard} label="Total debt" value={money0(debt)} sub={`${cards.length} card${cards.length === 1 ? '' : 's'} · ${loans.length} loan${loans.length === 1 ? '' : 's'}`} />
-          <Stat icon={Scale} label="Net worth" value={<span className={cash + invested - debt >= 0 ? 'pos' : 'bad'}>{money0(cash + invested - debt)}</span>} sub="What you have minus what you owe" />
+          <Stat icon={Scale} label="Net worth" value={<span className={cash + invested + property - debt >= 0 ? 'pos' : 'bad'}>{money0(cash + invested + property - debt)}</span>} sub="What you have minus what you owe" />
         </div>
       )}
 
@@ -248,6 +282,37 @@ export default function Accounts() {
                       <td className="amount">{r ? <span className={r > 0 ? 'pos' : 'bad'}>{r > 0 ? '+' : '−'}{money(Math.abs((a.balance || 0) * r / 100))}</span> : '—'}</td>
                       <td className="amount" title={cost ? `After ~${cost}% tax & penalties` : 'Add tax & penalties to estimate this'}>{money((a.balance || 0) * (1 - cost / 100))}{cost ? <div className="faint">−{cost}%</div> : null}</td>
                       <td className="amount faint">{counts.get(a.id) || 0}</td>
+                      {actions(a)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {assets.length > 0 && (
+        <Card title="Property & assets" subtitle="Estimated values. Link a mortgage or car loan to see your equity." className="mt flush">
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Asset</th><th className="amount">Value</th><th className="amount">Change / yr</th>
+                <th>Loan against it</th><th className="amount">Owed</th><th className="amount">Equity</th><th />
+              </tr></thead>
+              <tbody>
+                {assets.map((a) => {
+                  const i = assetInfo(a, data.accounts);
+                  return (
+                    <tr key={a.id}>
+                      <td><AccountCell a={a} /></td>
+                      <td className="amount"><b>{money(i.value)}</b></td>
+                      <td className="amount">{i.change ? <span className={i.change > 0 ? 'pos' : 'bad'}>{i.change > 0 ? '+' : '−'}{money(Math.abs(i.yearlyChange))}<div className="faint">{i.change}%</div></span> : '—'}</td>
+                      <td>{i.loan ? i.loan.name : <span className="faint">Owned outright</span>}</td>
+                      <td className="amount">{i.loan ? money(i.owed) : '—'}</td>
+                      <td className="amount"><b className={i.equity >= 0 ? 'pos' : 'bad'}>{money(i.equity)}</b>
+                        {i.loan && i.value > 0 && <div className="faint">{Math.round((Math.max(0, i.equity) / i.value) * 100)}% owned</div>}
+                      </td>
                       {actions(a)}
                     </tr>
                   );

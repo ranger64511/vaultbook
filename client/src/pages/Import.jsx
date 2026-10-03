@@ -5,11 +5,11 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Amount, CategorySelect } from '../components/ui.jsx';
 import { AccountForm } from './Accounts.jsx';
 import { money, shortDate, longDate } from '../lib/format.js';
-import { typeLabel, isDebt } from '../lib/accounts.js';
+import { typeLabel, isDebt, hasTransactions } from '../lib/accounts.js';
 
 export default function Import() {
   const { data, mutate, notify, accountsById } = useData();
-  const [accountId, setAccountId] = useState(data.accounts[0]?.id || '');
+  const [accountId, setAccountId] = useState(data.accounts.find((a) => hasTransactions(a.type))?.id || '');
   const [preview, setPreview] = useState(null);
   const [rows, setRows] = useState([]);
   const [applyStatement, setApplyStatement] = useState(true);
@@ -122,7 +122,7 @@ export default function Import() {
             ) : (
               <div className="row">
                 <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={{ flex: 1 }} aria-label="Account">
-                  {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({typeLabel(a.type, true)})</option>)}
+                  {data.accounts.filter((a) => hasTransactions(a.type)).map((a) => <option key={a.id} value={a.id}>{a.name} ({typeLabel(a.type, true)})</option>)}
                 </select>
                 <button className="btn" onClick={() => setNewAccount(true)}>New account</button>
               </div>

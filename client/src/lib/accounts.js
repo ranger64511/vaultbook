@@ -18,11 +18,15 @@ export const ACCOUNT_TYPES = [
   { value: 'personal-loan', group: 'loan', label: 'Personal loan', interest: 'apr' },
   { value: 'medical-debt', group: 'loan', label: 'Medical debt', interest: 'apr' },
   { value: 'other-debt', group: 'loan', label: 'Other debt', interest: 'apr' },
+  { value: 'home', group: 'asset', label: 'Home / real estate', short: 'Home', interest: 'change', changeHint: 'Homes often gain about 3–4% a year on average, but it varies a lot by area.', defaultChange: 3 },
+  { value: 'vehicle', group: 'asset', label: 'Vehicle', interest: 'change', changeHint: 'Cars usually lose value: often 10–20% a year (use a negative number).', defaultChange: -15 },
+  { value: 'property', group: 'asset', label: 'Other property / valuables', short: 'Property', interest: 'change', changeHint: 'Land, a boat, jewelry, collectibles… Use your own estimate, or leave blank.', defaultChange: 0 },
 ];
 
 export const ACCOUNT_GROUPS = [
   { value: 'bank', label: 'Bank & cash' },
   { value: 'investment', label: 'Investments' },
+  { value: 'asset', label: 'Property & assets' },
   { value: 'card', label: 'Credit cards' },
   { value: 'loan', label: 'Loans & other debts' },
 ];
@@ -34,6 +38,18 @@ export const earnsInterest = (value) => accountType(value).interest === 'apy';
 export const isDebt = (value) => ['card', 'loan'].includes(accountType(value).group);
 export const isLoan = (value) => accountType(value).group === 'loan';
 export const isInvestment = (value) => accountType(value).group === 'investment';
+export const isAsset = (value) => accountType(value).group === 'asset';
+/** Accounts that can have transactions (everything except property & assets). */
+export const hasTransactions = (value) => !isAsset(value);
+
+/** Value, what's owed on the linked loan, equity, and expected change over a year. */
+export function assetInfo(asset, accounts = []) {
+  const value = Math.max(0, Number(asset.balance) || 0);
+  const loan = asset.linkedLoan ? accounts.find((a) => a.id === asset.linkedLoan && isDebt(a.type)) : null;
+  const owed = loan ? Math.max(0, Number(loan.balance) || 0) : 0;
+  const change = Number(asset.appreciation) || 0;
+  return { value, loan, owed, equity: value - owed, yearlyChange: value * change / 100, change };
+}
 
 const DAY = 86400000;
 
