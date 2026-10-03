@@ -7,7 +7,10 @@ import { PageHead, Card, Stat, Empty, Segmented } from '../components/ui.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
 import { useChartColors } from '../lib/theme.js';
 import { simulatePayoff, detectRecurring, summarize, defaultMinPayment } from '../lib/analytics.js';
-import { money, money0, moneyCompact, monthsFromNow } from '../lib/format.js';
+import { money, money0, moneyCompact, monthsFromNow, monthLabel, addMonths, currentMonth } from '../lib/format.js';
+import MonthPicker from '../components/MonthPicker.jsx';
+
+const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 
 const duration = (m) => {
   if (!Number.isFinite(m)) return 'Never at this rate';
@@ -30,6 +33,7 @@ export default function Payoff() {
 
   const [budget, setBudget] = useState(() => data.settings.payoffBudget || Math.ceil((minTotal * 1.5) / 10) * 10);
   const [strategy, setStrategy] = useState(data.settings.payoffStrategy || 'avalanche');
+  const [viewMonth, setViewMonth] = useState(null); // month shown in the month-by-month plan
   // Persist the user's choices (debounced).
   useEffect(() => {
     if (budget === data.settings.payoffBudget && strategy === data.settings.payoffStrategy) return;
@@ -49,6 +53,15 @@ export default function Payoff() {
     if (!months.length) return 0;
     return summarize(data.transactions.filter((t) => months.some((m) => t.date.startsWith(m))), data.categories).wants / months.length;
   }, [data.transactions, data.categories]);
+
+  // Payment month i of the plan is i months from now; month 0 is the starting balance.
+  const thisMonth = currentMonth();
+  const lastIdx = Math.max(1, plan.schedule.length - 1);
+  const firstPay = addMonths(thisMonth, 1);
+  const lastPay = addMonths(thisMonth, lastIdx);
+  const shown = viewMonth && viewMonth >= firstPay ? (viewMonth > lastPay ? lastPay : viewMonth) : firstPay;
+  const shownIdx = monthsBetween(thisMonth, shown);
+  const selectedRow = plan.schedule[shownIdx];
 
   if (!cards.length) {
     return (
@@ -187,13 +200,21 @@ export default function Payoff() {
         </Card>
       </div>
 
-      <Card className="mt flush" title="Month-by-month plan" subtitle="First 12 months: what to pay on each card">
+      <Card className="mt flush" title="Month-by-month plan" subtitle={`What to pay on each card, 12 months starting ${monthLabel(shown, 'long')}`}
+        action={<MonthPicker value={shown} onChange={setViewMonth} min={firstPay} max={lastPay} />}>
+        {selectedRow && (
+          <div className="period-bar">
+            <b>{monthLabel(shown, 'long')}:</b> pay {money(Object.values(selectedRow.payments).reduce((s, p) => s + p, 0))} in total
+            {cards.filter((a) => selectedRow.payments[a.id] > 0.004).map((a) => <span key={a.id}> · {a.name} <b>{money(selectedRow.payments[a.id])}</b></span>)}
+            <span className="faint"> · {money(selectedRow.total)} left after this month{selectedRow.total <= 0.005 ? ', debt-free!' : ''}</span>
+          </div>
+        )}
         <div className="table-wrap">
           <table>
             <thead><tr><th>Month</th>{cards.map((a) => <th key={a.id} className="amount">{a.name}</th>)}<th className="amount">Remaining debt</th></tr></thead>
             <tbody>
-              {plan.schedule.slice(1, 13).map((row) => (
-                <tr key={row.month}>
+              {plan.schedule.slice(shownIdx, shownIdx + 12).map((row) => (
+                <tr key={row.month} className={row.month === shownIdx ? 'selected-row' : ''}>
                   <td className="faint">{monthsFromNow(row.month)}</td>
                   {cards.map((a) => {
                     const p = row.payments[a.id] || 0;

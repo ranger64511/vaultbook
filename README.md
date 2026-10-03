@@ -44,7 +44,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 | **Dashboard** | Total card debt and utilization, 12-month income vs. spending, weekly needs vs. wants, top spending categories, and recent activity. |
 | **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Plan to cancel* or *Keep*. Pick the month you expect each one to stop and see your planned savings month by month. Switch to *By month* to see which recurring charges were billed in any month and their total. **Planning only: Vault Book never cancels anything.** |
 | **Budget** | Monthly budgets per category, each marked **Need** or **Want**. One click suggests amounts from your 3-month averages, and spending is compared with the 50/30/20 guideline. |
-| **Debt payoff plan** | **Avalanche** (highest APR first) vs. **Snowball** (smallest balance first). Shows your debt-free date, total interest, interest saved vs. paying only minimums, a month-by-month payment schedule, and "speed it up" scenarios. |
+| **Debt payoff plan** | **Avalanche** (highest APR first) vs. **Snowball** (smallest balance first). Shows your debt-free date, total interest, interest saved vs. paying only minimums, a month-by-month payment schedule (pick any month to see exactly what to pay on each card), and "speed it up" scenarios. |
 | **Appearance** | Modern responsive UI with Light, Dark, and Auto (follows your OS) themes. |
 
 ## Requirements
