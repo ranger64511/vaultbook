@@ -36,3 +36,32 @@ test('mid-year raise is described with its start month', () => {
   const b = describeAdjustment({ type: 'lump', source: 'bonus', amount: 1200, percent: 50, month: '2026-12', repeat: 'quarterly' }, () => '');
   assert.match(b, /Bonus: \$1,200 every 3 months from December 2026 \(50% → \$600 toward debt\)/);
 });
+
+import { withdrawalInfo, projectInvestments } from './payoff.js';
+import { simulatePayoff } from './analytics.js';
+
+const k401 = { id: 'k', name: '401k', type: 'retirement', balance: 20000, expectedReturn: 7, withdrawalCost: 30 };
+
+test('withdrawal: tax & penalties are taken off before it reaches debt', () => {
+  const w = withdrawalInfo({ source: 'withdraw', fromAccount: 'k', amount: 10000 }, [k401]);
+  assert.equal(w.net, 7000);
+  assert.equal(w.cost, 3000);
+  const [x] = toSimExtras([{ type: 'lump', source: 'withdraw', fromAccount: 'k', amount: 10000, month: '2026-12', target: 'card' }], today, 600, [k401]);
+  assert.deepEqual(x, { type: 'lump', start: 2, amount: 7000, target: 'card', withdraw: { accountId: 'k', gross: 10000 } });
+});
+
+test('withdrawal is capped at the account balance and ignored for unknown accounts', () => {
+  assert.equal(withdrawalInfo({ fromAccount: 'k', amount: 50000 }, [k401]).gross, 20000);
+  assert.equal(toSimExtras([{ type: 'lump', source: 'withdraw', fromAccount: 'nope', amount: 1000, month: '2027-01' }], today, 600, [k401]).length, 0);
+});
+
+test('investment projection: growth, withdrawal and reinvesting after debt-free', () => {
+  const plan = simulatePayoff([{ id: 'card', name: 'Card', balance: 1000, apr: 20, minPayment: 50 }], 500, 'avalanche');
+  const extras = [{ type: 'lump', start: 1, amount: 700, withdraw: { accountId: 'k', gross: 1000 } }];
+  const none = projectInvestments({ accounts: [k401], plan, budget: 500, extras: [], horizon: 12, reinvest: false });
+  assert.ok(Math.abs(none.total - 20000 * 1.07) < 1); // a year of 7% growth
+  const withW = projectInvestments({ accounts: [k401], plan, budget: 500, extras, horizon: 12, reinvest: false });
+  assert.ok(withW.total < none.total - 1000);
+  const reinvested = projectInvestments({ accounts: [k401], plan, budget: 500, extras, horizon: 12, reinvest: true });
+  assert.ok(reinvested.contributed > 0 && reinvested.total > withW.total);
+});

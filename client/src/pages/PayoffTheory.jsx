@@ -11,7 +11,9 @@ import { money, money0, moneyCompact, monthsFromNow, currentMonth, addMonths } f
 import {
   duration, monthTicks, tickLabel, payoffDebts, debtsFrom, minimumTotal, mainPlanSettings, runPlan, monthsBetween,
   firstPaymentMonth, describeAdjustment, totalExtra, EXTRA_KINDS, REPEATS, kindOfAdjustment, towardDebt, toSimExtras,
+  withdrawalInfo, projectInvestments,
 } from '../lib/payoff.js';
+import { isInvestment } from '../lib/accounts.js';
 
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -104,8 +106,16 @@ export default function PayoffTheory() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const mainPlan = useMemo(() => runPlan(debts, main), [debtsKey, JSON.stringify(main)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const theory = useMemo(() => runPlan(debts, draft), [debtsKey, draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  const accounts = data.accounts;
+  const investments = accounts.filter((a) => isInvestment(a.type) && a.balance > 0);
+  const mainPlan = useMemo(() => runPlan(debts, main, accounts), [debtsKey, JSON.stringify(main), accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const theory = useMemo(() => runPlan(debts, draft, accounts), [debtsKey, draft, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasWithdrawals = draft.adjustments.some((a) => a.source === 'withdraw');
+  // The same theory without its investment withdrawals, to isolate their effect.
+  const withoutWithdrawals = useMemo(
+    () => (hasWithdrawals ? runPlan(debts, { ...draft, adjustments: draft.adjustments.filter((a) => a.source !== 'withdraw') }, accounts) : null),
+    [debtsKey, draft, accounts, hasWithdrawals], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   if (!cards.length) {
     return (
@@ -129,6 +139,7 @@ export default function PayoffTheory() {
       raise: { id: newId(), type: 'increase', source: 'raise', amount: 200, percent: 100, month: addMonths(firstPay, 3), endMonth: null },
       lump: { id: newId(), type: 'lump', source: 'lump', amount: 1000, percent: 100, month: addMonths(firstPay, 2), repeat: 'none', target: null },
       increase: { id: newId(), type: 'increase', source: 'increase', amount: 100, percent: 100, month: firstPay, endMonth: null },
+      withdraw: { id: newId(), type: 'lump', source: 'withdraw', fromAccount: investments[0]?.id, amount: Math.min(5000, Math.round(investments[0]?.balance || 0)), month: addMonths(firstPay, 1), repeat: 'none', target: null },
     }[kind]],
   }));
   const resetToMain = () => {
@@ -178,7 +189,7 @@ export default function PayoffTheory() {
   const len = Math.min(Math.max(fin(mainPlan) ? mainPlan.months : 120, fin(theory) ? theory.months : 0, 6), 360);
   const chart = Array.from({ length: len + 1 }, (_, i) => ({ month: i, main: mainPlan.schedule[i]?.total ?? 0, theory: theory.schedule[i]?.total ?? 0 }));
   // Mark lump-sum and bonus months on the chart (skipped when there are too many, e.g. monthly bonuses).
-  const lumpAll = [...new Set(toSimExtras(draft.adjustments).filter((x) => x.type === 'lump' && x.start <= len).map((x) => x.start))];
+  const lumpAll = [...new Set(toSimExtras(draft.adjustments, undefined, undefined, accounts).filter((x) => x.type === 'lump' && x.start <= len).map((x) => x.start))];
   const lumpMonths = lumpAll.length <= 24 ? lumpAll : [];
   const sameAsMain = !changed;
 
@@ -237,7 +248,7 @@ export default function PayoffTheory() {
           <div className="spread mt" style={{ marginTop: 20 }}>
             <h3>Extra payments, bonuses & raises</h3>
             <div className="row" style={{ gap: 6 }}>
-              {EXTRA_KINDS.map((k) => <button key={k.value} className="btn sm" onClick={() => add(k.value)} title={k.hint}><Plus size={14} /> {k.label}</button>)}
+              {EXTRA_KINDS.filter((k) => k.value !== 'withdraw' || investments.length).map((k) => <button key={k.value} className="btn sm" onClick={() => add(k.value)} title={k.hint}><Plus size={14} /> {k.label}</button>)}
             </div>
           </div>
           {!draft.adjustments.length ? (
@@ -248,7 +259,7 @@ export default function PayoffTheory() {
           ) : (
             <div className="stack" style={{ gap: 10, marginTop: 10 }}>
               {draft.adjustments.map((a) => (
-                <ExtraEditor key={a.id} a={a} debts={cards} strategy={draft.strategy} firstPay={firstPay}
+                <ExtraEditor key={a.id} a={a} debts={cards} investments={investments} accounts={accounts} strategy={draft.strategy} firstPay={firstPay}
                   onChange={(patch) => update(a.id, patch)} onRemove={() => remove(a.id)} />
               ))}
             </div>
@@ -280,6 +291,10 @@ export default function PayoffTheory() {
         <Stat icon={Sparkles} label="Interest saved vs. main" value={<span className={interestSaved > 0 ? 'pos' : ''}>{money0(Math.max(0, interestSaved))}</span>}
           sub={monthsSooner > 0 ? `Debt-free ${duration(monthsSooner)} sooner` : 'Add extra payments to see savings'} />
       </div>
+
+      {hasWithdrawals && withoutWithdrawals && (
+        <InvestmentImpact accounts={accounts} draft={draft} theory={theory} without={withoutWithdrawals} colors={c} />
+      )}
 
       <Card className="mt" title="Total balance: theory vs. main plan" action={<Legend items={[{ label: 'Theory', color: c.series[0] }, { label: 'Main plan', color: c.muted }]} />}
         subtitle={lumpMonths.length ? 'Dotted lines mark lump-sum and bonus months.' : undefined}>
@@ -334,7 +349,7 @@ export default function PayoffTheory() {
           <p>Your main plan will become <b>{draft.name || 'this theory'}</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             <li>{money0(draft.budget)}/month toward debts, {draft.strategy} strategy{draft.budget !== main.budget ? ` (was ${money0(main.budget)})` : ''}</li>
-            {cleanDraft.adjustments.map((a) => <li key={a.id}>{describeAdjustment(a, cardName)}</li>)}
+            {cleanDraft.adjustments.map((a) => <li key={a.id}>{describeAdjustment(a, cardName, accounts)}</li>)}
             {!cleanDraft.adjustments.length && <li>No extra payments</li>}
           </ul>
           <p className="muted">
@@ -362,22 +377,23 @@ function CompareRow({ label, main, theory, delta, good }) {
 
 
 /** One extra payment: bonus, raise, lump sum or monthly increase. */
-function ExtraEditor({ a, debts, strategy, firstPay, onChange, onRemove }) {
+function ExtraEditor({ a, debts, investments, accounts, strategy, firstPay, onChange, onRemove }) {
   const kind = kindOfAdjustment(a);
+  if (kind === 'withdraw') return <WithdrawEditor a={a} debts={debts} investments={investments} accounts={accounts} strategy={strategy} firstPay={firstPay} onChange={onChange} onRemove={onRemove} />;
   const meta = EXTRA_KINDS.find((k) => k.value === kind) || EXTRA_KINDS[2];
   const lump = a.type === 'lump';
   const repeating = lump && a.repeat && a.repeat !== 'none';
   const pct = a.percent == null || a.percent === '' ? 100 : a.percent;
   const setKind = (value) => {
     const k = EXTRA_KINDS.find((x) => x.value === value);
-    onChange({ source: value, type: k.type, ...(k.type === 'lump' ? { repeat: value === 'bonus' ? 'yearly' : 'none', endMonth: null } : { target: null, repeat: 'none' }) });
+    onChange({ source: value, type: k.type, fromAccount: null, ...(k.type === 'lump' ? { repeat: value === 'bonus' ? 'yearly' : 'none', endMonth: null } : { target: null, repeat: 'none' }) });
   };
   return (
     <div className="extra-row">
       <div className="field">
         <label>Type</label>
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          {EXTRA_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+          {EXTRA_KINDS.filter((k) => k.value !== 'withdraw').map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
         </select>
       </div>
       <div className="field">
@@ -422,5 +438,121 @@ function ExtraEditor({ a, debts, strategy, firstPay, onChange, onRemove }) {
         {a.month < firstPay && <span className="bad"> {lump && !repeating ? 'This month is in the past, so it’s ignored.' : 'Already started; counted from next month.'}</span>}
       </div>
     </div>
+  );
+}
+
+function WithdrawEditor({ a, debts, investments, accounts, strategy, firstPay, onChange, onRemove }) {
+  const w = withdrawalInfo(a, accounts);
+  const fmt = (n) => `$${Math.round(n).toLocaleString('en-US')}`;
+  return (
+    <div className="extra-row">
+      <div className="field">
+        <label>Type</label>
+        <select value="withdraw" disabled><option value="withdraw">Investment withdrawal</option></select>
+      </div>
+      <div className="field">
+        <label>From</label>
+        <select value={a.fromAccount || ''} onChange={(e) => onChange({ fromAccount: e.target.value })} style={{ maxWidth: 200 }}>
+          {!w && <option value="">Choose an account</option>}
+          {investments.map((acct) => <option key={acct.id} value={acct.id}>{acct.name}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>Amount withdrawn</label>
+        <input type="number" min="0" step="100" value={a.amount} onChange={(e) => onChange({ amount: e.target.value === '' ? '' : Number(e.target.value) })} style={{ width: 120 }} />
+      </div>
+      <div className="field">
+        <label>Month</label>
+        <input type="month" value={a.month} min={firstPay} onChange={(e) => e.target.value && onChange({ month: e.target.value })} />
+      </div>
+      <div className="field">
+        <label>Goes to</label>
+        <select value={a.target || ''} onChange={(e) => onChange({ target: e.target.value || null })} style={{ maxWidth: 200 }}>
+          <option value="">Focus debt ({strategy})</option>
+          {debts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      </div>
+      <button className="btn ghost icon sm" aria-label="Remove" title="Remove" onClick={onRemove} style={{ alignSelf: 'flex-end', marginBottom: 3 }}><Trash2 size={14} /></button>
+      <div className="extra-note faint">
+        {w ? (
+          <>
+            {w.gross < Number(a.amount) && <span className="bad">Only {fmt(w.gross)} is in this account. </span>}
+            {w.costPct
+              ? <>About <b>{fmt(w.cost)}</b> goes to tax & penalties ({w.costPct}%), leaving <b>{fmt(w.net)}</b> for debt. </>
+              : <>No tax & penalty rate is set on this account (edit it on Accounts), so all {fmt(w.net)} goes to debt. </>}
+            The account loses the full {fmt(w.gross)} and its future growth.
+          </>
+        ) : 'Pick the investment account this money comes from.'}
+        {a.month < firstPay && <span className="bad"> This month is in the past, so it’s ignored.</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Debt saved vs. investment growth given up, for the theory's withdrawals. */
+function InvestmentImpact({ accounts, draft, theory, without, colors: c }) {
+  const [reinvest, setReinvest] = useState(true);
+  const withExtras = toSimExtras(draft.adjustments, undefined, undefined, accounts);
+  const withoutExtras = withExtras.filter((x) => !x.withdraw);
+  const withdrawals = draft.adjustments.filter((a) => a.source === 'withdraw').map((a) => withdrawalInfo(a, accounts)).filter(Boolean);
+  const gross = withdrawals.reduce((s, w) => s + w.gross, 0);
+  const cost = withdrawals.reduce((s, w) => s + w.cost, 0);
+  const net = gross - cost;
+  const fin = (p) => Number.isFinite(p.months);
+  // Compare once both versions are debt-free (at least a year out).
+  const horizon = fin(theory) && fin(without) ? Math.min(600, Math.max(theory.months, without.months, 12)) : 360;
+  const intoId = withdrawals[0]?.account.id;
+  const pWith = projectInvestments({ accounts, plan: theory, budget: draft.budget, extras: withExtras, horizon, reinvest, intoId });
+  const pWithout = projectInvestments({ accounts, plan: without, budget: draft.budget, extras: withoutExtras, horizon, reinvest, intoId });
+  const interestSaved = without.totalInterest - theory.totalInterest;
+  const sooner = fin(theory) && fin(without) ? without.months - theory.months : null;
+  const investDiff = pWith.total - pWithout.total;
+  // With reinvesting, the interest saved already shows up as earlier contributions.
+  const netEffect = reinvest ? investDiff : interestSaved + investDiff;
+  const ahead = netEffect >= 0;
+  const chart = pWith.series.map((r, i) => ({ month: r.month, with: r.total, without: pWithout.series[i]?.total ?? null }));
+
+  return (
+    <Card className="mt" title="Investment impact" subtitle="Using investments to pay debt: the interest you save against the growth you give up.">
+      <div className="grid g-2" style={{ gap: 20 }}>
+        <div className="stack" style={{ gap: 10 }}>
+          <div className="spread"><span className="muted">Withdrawn from investments</span><b>{money(gross)}</b></div>
+          <div className="spread"><span className="muted">Tax & penalties</span><b className="bad">−{money(cost)}</b></div>
+          <div className="spread"><span className="muted">Put toward debt</span><b>{money(net)}</b></div>
+          <div className="spread"><span className="muted">Interest saved on debt</span><b className="pos">{money(interestSaved)}</b></div>
+          <div className="spread"><span className="muted">Debt-free</span><b>{sooner == null ? '—' : sooner > 0 ? `${duration(sooner)} sooner` : 'no change'}</b></div>
+          <div className="spread"><span className="muted">Investments by {monthsFromNow(horizon)}</span>
+            <span><span className="muted">{money0(pWithout.total)} without</span> → <b>{money0(pWith.total)}</b> with</span>
+          </div>
+          <div className={ahead ? 'info-box' : 'warn-box'}>
+            {ahead ? <>By {monthsFromNow(horizon)}, withdrawing comes out about <b>{money0(netEffect)} ahead</b>.</>
+              : <>By {monthsFromNow(horizon)}, withdrawing leaves you about <b>{money0(-netEffect)} behind</b>, because the growth and tax cost outweigh the interest saved.</>}
+          </div>
+          <label className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={reinvest} onChange={(e) => setReinvest(e.target.checked)} />
+            After you’re debt-free, assume the money you were paying toward debt gets invested
+          </label>
+        </div>
+        <div>
+          <div className="chart-box sm">
+            <ResponsiveContainer>
+              <LineChart data={chart}>
+                <CartesianGrid vertical={false} stroke={c.grid} />
+                <XAxis dataKey="month" {...axisProps(c)} ticks={monthTicks(horizon)} tickFormatter={tickLabel} />
+                <YAxis tickFormatter={moneyCompact} width={56} {...axisProps(c)} axisLine={false} />
+                <Tooltip content={<ChartTooltip labelFormatter={(m) => monthsFromNow(m)} />} />
+                <Line type="monotone" dataKey="without" name="Investments without withdrawal" stroke={c.muted} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                <Line type="monotone" dataKey="with" name="Investments with withdrawal" stroke={c.series[2]} strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <Legend items={[{ label: 'With withdrawal', color: c.series[2] }, { label: 'Without', color: c.muted }]} />
+        </div>
+      </div>
+      <p className="faint mt">
+        Investment returns aren’t guaranteed and can be negative. Retirement accounts also lose tax-advantaged growth that is hard to rebuild,
+        and money in them may be protected in ways cash isn’t. Keep an emergency fund. This is an estimate to help you think it through, not financial or tax advice.
+      </p>
+    </Card>
   );
 }

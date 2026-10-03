@@ -219,6 +219,7 @@ const ACCOUNT_TYPES = [
 ];
 const DEBT_TYPES = new Set(['credit', 'auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'medical-debt', 'other-debt']);
 const isDebt = (type) => DEBT_TYPES.has(type);
+const INVESTMENT_TYPES = new Set(['brokerage', 'retirement']);
 const ACCOUNT_FIELDS = [
   'name', 'type', 'institution', 'balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'last4', 'maturityDate',
   'expectedReturn', 'withdrawalCost', 'excludeFromPayoff',
@@ -500,7 +501,9 @@ function cleanAdjustments(list) {
     return [{
       id: /^[\w-]{1,40}$/.test(a.id || '') ? a.id : crypto.randomUUID(),
       type: a.type,
-      source: ['bonus', 'raise', 'lump', 'increase'].includes(a.source) ? a.source : null,
+      source: ['bonus', 'raise', 'lump', 'increase', 'withdraw'].includes(a.source) ? a.source : null,
+      // Investment withdrawals name the account the money comes from.
+      fromAccount: a.source === 'withdraw' && state.data.accounts.some((x) => x.id === a.fromAccount && INVESTMENT_TYPES.has(x.type)) ? a.fromAccount : null,
       amount,
       percent,
       month: a.month,

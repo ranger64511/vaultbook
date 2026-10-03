@@ -23,7 +23,7 @@ export default function Payoff() {
   const minTotal = minimumTotal(debts);
   const main = mainPlanSettings(data.settings, debts);
   const adjustments = main.adjustments;
-  const extras = useMemo(() => toSimExtras(adjustments), [JSON.stringify(adjustments)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const extras = useMemo(() => toSimExtras(adjustments, undefined, undefined, data.accounts), [JSON.stringify(adjustments), data.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [budget, setBudget] = useState(main.budget);
   const [strategy, setStrategy] = useState(main.strategy);
@@ -124,11 +124,11 @@ export default function Payoff() {
               {adjustments.map((a) => (
                 <div key={a.id} className="row" style={{ gap: 8 }}>
                   <span className={`badge ${a.type === 'lump' ? 'income' : 'need'}`}>{a.type === 'lump' ? 'Lump sum' : 'Monthly increase'}</span>
-                  <span>{describeAdjustment(a, cardName)}</span>
+                  <span>{describeAdjustment(a, cardName, data.accounts)}</span>
                   <button className="btn ghost icon sm" aria-label="Remove from main plan" title="Remove from main plan" onClick={() => removeAdjustment(a.id)}><X size={14} /></button>
                 </div>
               ))}
-              <p className="faint">{money0(totalExtra(plan))} in extra payments over the life of the plan. Make these payments yourself; Vault Book doesn’t move money.</p>
+              <p className="faint">{money0(totalExtra(plan))} in extra payments over the life of the plan. Make these payments and any withdrawals yourself; Vault Book doesn’t move money.</p>
             </div>
           ) : (
             <p className="faint" style={{ marginTop: 6 }}>None yet. Use Payoff theory to test lump sums (like a tax refund or bonus) or raising your monthly payment, then apply the ones you like here.</p>
