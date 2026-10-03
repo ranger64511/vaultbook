@@ -4,7 +4,7 @@ import MonthPicker from './MonthPicker.jsx';
 import { money, money0, monthsFromNow, monthLabel, addMonths, currentMonth } from '../lib/format.js';
 import { monthsBetween } from '../lib/payoff.js';
 
-/** Month-by-month payments per card, 12 months from a chosen month. */
+/** Month-by-month payments per debt, 12 months from a chosen month. */
 export default function PayoffSchedule({ plan, cards, title = 'Month-by-month plan' }) {
   const [viewMonth, setViewMonth] = useState(null);
   const thisMonth = currentMonth();
@@ -17,7 +17,7 @@ export default function PayoffSchedule({ plan, cards, title = 'Month-by-month pl
   const hasExtras = plan.schedule.some((r) => r.extra > 0);
 
   return (
-    <Card className="mt flush" title={title} subtitle={`What to pay on each card, 12 months starting ${monthLabel(shown, 'long')}`}
+    <Card className="mt flush" title={title} subtitle={`What to pay on each debt, 12 months starting ${monthLabel(shown, 'long')}`}
       action={<MonthPicker value={shown} onChange={setViewMonth} min={firstPay} max={lastPay} />}>
       {row0 && (
         <div className="period-bar">

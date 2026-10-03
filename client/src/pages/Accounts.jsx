@@ -1,24 +1,41 @@
 import { useState } from 'react';
-import { CreditCard, Landmark, PiggyBank, Coins, CalendarClock, Banknote, Wallet, Plus, Pencil, Trash2, TrendingUp } from 'lucide-react';
+import {
+  CreditCard, Landmark, PiggyBank, Coins, CalendarClock, Banknote, Wallet, Plus, Pencil, Trash2, TrendingUp,
+  Car, Home, GraduationCap, HandCoins, Stethoscope, Receipt, LineChart, Briefcase, Scale,
+} from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Modal, Stat } from '../components/ui.jsx';
 import { money, money0, pct, longDate } from '../lib/format.js';
-import { ACCOUNT_TYPES, accountType, typeLabel, earnsInterest, interestInfo } from '../lib/accounts.js';
+import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment } from '../lib/accounts.js';
 
-const ICON = { credit: CreditCard, checking: Landmark, savings: PiggyBank, 'money-market': Coins, cd: CalendarClock, cash: Banknote, other: Wallet };
+const ICON = {
+  credit: CreditCard, checking: Landmark, savings: PiggyBank, 'money-market': Coins, cd: CalendarClock, cash: Banknote, other: Wallet,
+  brokerage: LineChart, retirement: Briefcase,
+  'auto-loan': Car, mortgage: Home, 'student-loan': GraduationCap, 'personal-loan': HandCoins, 'medical-debt': Stethoscope, 'other-debt': Receipt,
+};
+
+const PLACEHOLDER = {
+  bank: 'e.g. High-Yield Savings', investment: 'e.g. Retirement 401(k)', card: 'e.g. Rewards Visa', loan: 'e.g. Car loan',
+};
 
 export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }) {
   const { mutate } = useData();
   const [f, setF] = useState(() => ({
-    name: '', type: 'checking', institution: '', balance: '', apr: '', apy: '', minPayment: '', creditLimit: '', dueDay: '', last4: '', maturityDate: '',
+    name: '', type: 'checking', institution: '', balance: '', apr: '', apy: '', minPayment: '', creditLimit: '', dueDay: '', last4: '',
+    maturityDate: '', expectedReturn: '', withdrawalCost: '', excludeFromPayoff: false,
     ...Object.fromEntries(Object.entries(account || {}).map(([k, v]) => [k, v ?? ''])),
   }));
   const [error, setError] = useState('');
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
   const type = accountType(f.type);
-  const credit = f.type === 'credit';
+  const group = type.group;
+  const debt = isDebt(f.type);
+  const card = f.type === 'credit';
+  const invest = isInvestment(f.type);
   const interest = earnsInterest(f.type);
   const preview = interest ? interestInfo({ ...f, balanceAsOf: null }) : null;
+  const ret = Number(f.expectedReturn) || 0;
+  const bal = Number(f.balance) || 0;
 
   const save = async (e) => {
     e.preventDefault();
@@ -26,9 +43,12 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
     try {
       const body = { ...f };
       // Clear fields that don't apply to this account type.
-      if (!credit) Object.assign(body, { apr: null, minPayment: null, creditLimit: null, dueDay: null });
+      if (!debt) Object.assign(body, { apr: null, minPayment: null, dueDay: null, excludeFromPayoff: false });
+      if (!card) body.creditLimit = null;
       if (!interest) body.apy = null;
+      if (!invest) Object.assign(body, { expectedReturn: null, withdrawalCost: null });
       if (f.type !== 'cd') body.maturityDate = null;
+      body.excludeFromPayoff = !!body.excludeFromPayoff;
       const saved = await mutate(account ? `/accounts/${account.id}` : '/accounts', { method: account ? 'PUT' : 'POST', body }, account ? 'Account updated' : 'Account added');
       onSaved?.(saved);
     } catch (err) { setError(err.message); }
@@ -36,22 +56,24 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
 
   return (
     <form className="form-grid" onSubmit={save}>
-      <div className="field full"><label>Account name</label><input value={f.name} onChange={set('name')} placeholder={credit ? 'e.g. Rewards Visa' : 'e.g. High-Yield Savings'} required /></div>
+      <div className="field full"><label>Account name</label><input value={f.name} onChange={set('name')} placeholder={PLACEHOLDER[group]} required /></div>
       <div className="field"><label>Type</label>
         <select value={f.type} onChange={set('type')}>
-          <optgroup label="Bank & cash">
-            {ACCOUNT_TYPES.filter((t) => t.value !== 'credit').map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </optgroup>
-          <optgroup label="Debt">
-            <option value="credit">Credit card</option>
-          </optgroup>
+          {ACCOUNT_GROUPS.map((g) => (
+            <optgroup key={g.value} label={g.label}>
+              {ACCOUNT_TYPES.filter((t) => t.group === g.value).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
-      <div className="field"><label>{f.type === 'cash' ? 'Where it’s kept' : 'Bank / issuer'}</label><input value={f.institution} onChange={set('institution')} placeholder="Optional" /></div>
-      <div className="field"><label>{credit ? 'Current balance owed' : 'Current balance'}</label>
+      <div className="field"><label>{f.type === 'cash' ? 'Where it’s kept' : group === 'loan' ? 'Lender' : invest ? 'Provider' : 'Bank / issuer'}</label>
+        <input value={f.institution} onChange={set('institution')} placeholder="Optional" />
+      </div>
+      <div className="field"><label>{debt ? 'Current balance owed' : invest ? 'Current value' : 'Current balance'}</label>
         <input type="number" step="0.01" value={f.balance} onChange={set('balance')} placeholder="0.00" />
       </div>
       {f.type !== 'cash' && <div className="field"><label>Last 4 digits</label><input value={f.last4} onChange={set('last4')} maxLength={4} inputMode="numeric" placeholder="Optional" /></div>}
+
       {interest && (
         <div className="field"><label>Interest rate (APY %)</label>
           <input type="number" step="0.01" min="0" max="100" value={f.apy} onChange={set('apy')} placeholder="e.g. 4.25" />
@@ -67,12 +89,39 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
           {preview.maturityValue != null && <>, and is worth about <b>{money(preview.maturityValue)}</b> at maturity</>}.
         </div>
       )}
-      {credit && (
+
+      {invest && (
         <>
-          <div className="field"><label>APR %</label><input type="number" step="0.01" value={f.apr} onChange={set('apr')} placeholder="e.g. 24.99" /></div>
-          <div className="field"><label>Minimum payment</label><input type="number" step="0.01" value={f.minPayment} onChange={set('minPayment')} placeholder="From statement" /></div>
-          <div className="field"><label>Credit limit</label><input type="number" step="1" value={f.creditLimit} onChange={set('creditLimit')} placeholder="Optional" /></div>
+          <div className="field"><label>Expected yearly return %</label>
+            <input type="number" step="0.1" min="-50" max="50" value={f.expectedReturn} onChange={set('expectedReturn')} placeholder="e.g. 7" />
+            <span className="hint">Your own estimate. Returns aren’t guaranteed and can be negative.</span>
+          </div>
+          <div className="field"><label>Tax & penalties if withdrawn %</label>
+            <input type="number" step="1" min="0" max="100" value={f.withdrawalCost} onChange={set('withdrawalCost')} placeholder={f.type === 'retirement' ? 'e.g. 32' : 'e.g. 15'} />
+            <span className="hint">{type.costHint}</span>
+          </div>
+          {bal > 0 && (ret !== 0 || Number(f.withdrawalCost) > 0) && (
+            <div className="info-box full">
+              {ret !== 0 && <>At {ret}% a year this would {ret > 0 ? 'grow' : 'shrink'} by about <b>{money(Math.abs(bal * ret / 100))}</b> in a year. </>}
+              {Number(f.withdrawalCost) > 0 && <>Cashing it all out today would leave about <b>{money(bal * (1 - Number(f.withdrawalCost) / 100))}</b> after tax and penalties.</>}
+            </div>
+          )}
+        </>
+      )}
+
+      {debt && (
+        <>
+          <div className="field"><label>Interest rate (APR %)</label><input type="number" step="0.01" value={f.apr} onChange={set('apr')} placeholder={card ? 'e.g. 24.99' : 'e.g. 6.5'} /></div>
+          <div className="field"><label>{card ? 'Minimum payment' : 'Monthly payment'}</label>
+            <input type="number" step="0.01" value={f.minPayment} onChange={set('minPayment')} placeholder={card ? 'From statement' : 'Your required payment'} />
+          </div>
+          {card && <div className="field"><label>Credit limit</label><input type="number" step="1" value={f.creditLimit} onChange={set('creditLimit')} placeholder="Optional" /></div>}
           <div className="field"><label>Payment due day</label><input type="number" min="1" max="31" value={f.dueDay} onChange={set('dueDay')} placeholder="1–31" /></div>
+          <label className="row full" style={{ gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!f.excludeFromPayoff} onChange={(e) => setF((x) => ({ ...x, excludeFromPayoff: !e.target.checked }))} />
+            Include in the debt payoff plan
+            <span className="faint">Untick to leave it out, for example a mortgage you just want to pay normally.</span>
+          </label>
         </>
       )}
       {error && <div className="error-box full">{error}</div>}
@@ -84,7 +133,7 @@ export function AccountForm({ account, onSaved, onCancel, submitLabel = 'Save' }
   );
 }
 
-function AccountCell({ a }) {
+function AccountCell({ a, extra }) {
   const Icon = ICON[a.type] || Wallet;
   return (
     <div className="row" style={{ gap: 12, flexWrap: 'nowrap' }}>
@@ -92,6 +141,7 @@ function AccountCell({ a }) {
       <div>
         <b>{a.name}</b>{a.last4 && <span className="faint"> ••{a.last4}</span>}
         <div className="faint">{[typeLabel(a.type, true), a.institution].filter(Boolean).join(' · ')}{a.balanceAsOf && ` · as of ${longDate(a.balanceAsOf)}`}</div>
+        {extra}
       </div>
     </div>
   );
@@ -103,13 +153,16 @@ export default function Accounts() {
   const counts = new Map();
   for (const t of data.transactions) counts.set(t.accountId, (counts.get(t.accountId) || 0) + 1);
 
-  const cards = data.accounts.filter((a) => a.type === 'credit');
-  const banks = data.accounts.filter((a) => a.type !== 'credit');
-  const debt = cards.reduce((s, a) => s + (a.balance || 0), 0);
+  const byGroup = (g) => data.accounts.filter((a) => accountType(a.type).group === g);
+  const banks = byGroup('bank');
+  const investments = byGroup('investment');
+  const cards = byGroup('card');
+  const loans = byGroup('loan');
   const interest = new Map(banks.map((a) => [a.id, interestInfo(a)]));
   const cash = banks.reduce((s, a) => s + (interest.get(a.id)?.estimatedToday ?? (a.balance || 0)), 0);
+  const invested = investments.reduce((s, a) => s + (a.balance || 0), 0);
+  const debt = [...cards, ...loans].reduce((s, a) => s + (a.balance || 0), 0);
   const yearly = [...interest.values()].reduce((s, i) => s + (i?.yearly || 0), 0);
-  const monthly = [...interest.values()].reduce((s, i) => s + (i?.monthly || 0), 0);
 
   const actions = (a) => (
     <td style={{ width: 90, whiteSpace: 'nowrap' }}>
@@ -119,28 +172,29 @@ export default function Accounts() {
         mutate(`/accounts/${a.id}`, { method: 'DELETE' }, 'Account deleted')}><Trash2 size={15} /></button>
     </td>
   );
+  const planBadge = (a) => (a.excludeFromPayoff ? <span className="badge">Not in plan</span> : null);
 
   return (
     <>
-      <PageHead title="Accounts & cards" subtitle="Bank accounts, savings, cash and credit cards.">
+      <PageHead title="Accounts" subtitle="Bank accounts, savings, investments, credit cards and loans.">
         <button className="btn primary" onClick={() => setEditing('new')}><Plus size={16} /> Add account</button>
       </PageHead>
 
       {!data.accounts.length ? (
         <Card><Empty icon={CreditCard} title="No accounts yet" action={<button className="btn primary" onClick={() => setEditing('new')}>Add your first account</button>}>
-          Add your checking, savings, money market, CD, cash and credit card accounts.
+          Add your checking, savings, investment, credit card and loan accounts.
         </Empty></Card>
       ) : (
         <div className="grid g-4">
-          <Stat icon={PiggyBank} label="Bank & cash" value={money0(cash)} sub={`${banks.length} account${banks.length === 1 ? '' : 's'} · incl. interest to date`} />
-          <Stat icon={TrendingUp} label="Interest earned" value={<span className={yearly > 0 ? 'pos' : ''}>{money(yearly)}/yr</span>}
-            sub={yearly > 0 ? `About ${money(monthly)} a month` : 'Add an APY to savings accounts to see this'} />
-          <Stat icon={CreditCard} label="Owed on cards" value={money0(debt)} sub={`${cards.length} card${cards.length === 1 ? '' : 's'}`} />
+          <Stat icon={PiggyBank} label="Bank & cash" value={money0(cash)} sub={yearly > 0 ? <span className="pos">+{money(yearly)}/yr interest</span> : `${banks.length} account${banks.length === 1 ? '' : 's'}`} />
+          <Stat icon={TrendingUp} label="Investments" value={money0(invested)} sub={`${investments.length} account${investments.length === 1 ? '' : 's'}`} />
+          <Stat icon={CreditCard} label="Total debt" value={money0(debt)} sub={`${cards.length} card${cards.length === 1 ? '' : 's'} · ${loans.length} loan${loans.length === 1 ? '' : 's'}`} />
+          <Stat icon={Scale} label="Net worth" value={<span className={cash + invested - debt >= 0 ? 'pos' : 'bad'}>{money0(cash + invested - debt)}</span>} sub="What you have minus what you owe" />
         </div>
       )}
 
       {banks.length > 0 && (
-        <Card title="Bank & cash accounts" subtitle="Interest is estimated from each account’s APY, compounding daily." className="mt flush">
+        <Card title="Bank & cash" subtitle="Interest is estimated from each account’s APY, compounding daily." className="mt flush">
           <div className="table-wrap">
             <table>
               <thead><tr>
@@ -151,24 +205,48 @@ export default function Accounts() {
               <tbody>
                 {banks.map((a) => {
                   const i = interest.get(a.id);
-                  const canEarn = earnsInterest(a.type);
                   return (
                     <tr key={a.id}>
-                      <td>
-                        <AccountCell a={a} />
-                        {i?.maturityValue != null && (
-                          <div className="faint" style={{ marginLeft: 42 }}>
-                            {i.daysToMaturity > 0 ? `Matures ${longDate(a.maturityDate)} · worth ~${money(i.maturityValue)}` : `Matured ${longDate(a.maturityDate)}`}
-                          </div>
-                        )}
-                      </td>
+                      <td><AccountCell a={a} extra={i?.maturityValue != null && (
+                        <div className="faint">{i.daysToMaturity > 0 ? `Matures ${longDate(a.maturityDate)} · worth ~${money(i.maturityValue)}` : `Matured ${longDate(a.maturityDate)}`}</div>
+                      )} /></td>
                       <td className="amount"><b>{money(a.balance || 0)}</b></td>
-                      <td className="amount">{i ? `${i.apy}%` : canEarn ? <button className="btn ghost sm" onClick={() => setEditing(a)}>Add</button> : '—'}</td>
+                      <td className="amount">{i ? `${i.apy}%` : earnsInterest(a.type) ? <button className="btn ghost sm" onClick={() => setEditing(a)}>Add</button> : '—'}</td>
                       <td className="amount">{i ? <span className="pos">+{money(i.monthly)}</span> : '—'}</td>
                       <td className="amount">{i ? <span className="pos">+{money(i.yearly)}</span> : '—'}</td>
                       <td className="amount" title={i ? `${money(i.accruedSinceAsOf)} interest since ${longDate(i.asOf)}` : undefined}>
                         {i && i.accruedSinceAsOf >= 0.01 ? money(i.estimatedToday) : <span className="faint">{money(a.balance || 0)}</span>}
                       </td>
+                      <td className="amount faint">{counts.get(a.id) || 0}</td>
+                      {actions(a)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {investments.length > 0 && (
+        <Card title="Investments" subtitle="Growth uses your expected return, which is an estimate, not a guarantee." className="mt flush">
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Account</th><th className="amount">Value</th><th className="amount">Expected return</th>
+                <th className="amount">Growth / yr</th><th className="amount">If cashed out today</th><th className="amount">Transactions</th><th />
+              </tr></thead>
+              <tbody>
+                {investments.map((a) => {
+                  const r = Number(a.expectedReturn) || 0;
+                  const cost = Number(a.withdrawalCost) || 0;
+                  return (
+                    <tr key={a.id}>
+                      <td><AccountCell a={a} /></td>
+                      <td className="amount"><b>{money(a.balance || 0)}</b></td>
+                      <td className="amount">{a.expectedReturn != null ? `${r}%` : <button className="btn ghost sm" onClick={() => setEditing(a)}>Add</button>}</td>
+                      <td className="amount">{r ? <span className={r > 0 ? 'pos' : 'bad'}>{r > 0 ? '+' : '−'}{money(Math.abs((a.balance || 0) * r / 100))}</span> : '—'}</td>
+                      <td className="amount" title={cost ? `After ~${cost}% tax & penalties` : 'Add tax & penalties to estimate this'}>{money((a.balance || 0) * (1 - cost / 100))}{cost ? <div className="faint">−{cost}%</div> : null}</td>
                       <td className="amount faint">{counts.get(a.id) || 0}</td>
                       {actions(a)}
                     </tr>
@@ -190,7 +268,7 @@ export default function Accounts() {
                   const util = a.creditLimit ? (a.balance / a.creditLimit) * 100 : null;
                   return (
                     <tr key={a.id}>
-                      <td><AccountCell a={a} /></td>
+                      <td><AccountCell a={a} extra={planBadge(a)} /></td>
                       <td className="amount"><b>{money(a.balance || 0)}</b></td>
                       <td className="amount">{a.apr != null ? `${a.apr}%` : <span className="badge warn">Add APR</span>}</td>
                       <td className="amount">{a.minPayment != null ? money(a.minPayment) : '—'}</td>
@@ -207,7 +285,31 @@ export default function Accounts() {
         </Card>
       )}
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add account' : 'Edit account'}>
+      {loans.length > 0 && (
+        <Card title="Loans & other debts" subtitle="Car loans, mortgages, student, personal and medical loans." className="mt flush">
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Account</th><th className="amount">Balance</th><th className="amount">APR</th><th className="amount">Monthly payment</th><th className="amount">Interest / mo</th><th>Due</th><th className="amount">Transactions</th><th /></tr></thead>
+              <tbody>
+                {loans.map((a) => (
+                  <tr key={a.id}>
+                    <td><AccountCell a={a} extra={planBadge(a)} /></td>
+                    <td className="amount"><b>{money(a.balance || 0)}</b></td>
+                    <td className="amount">{a.apr != null ? `${a.apr}%` : <span className="badge warn">Add APR</span>}</td>
+                    <td className="amount">{a.minPayment != null ? money(a.minPayment) : <span className="badge warn">Add payment</span>}</td>
+                    <td className="amount">{a.apr ? money(((a.balance || 0) * a.apr) / 1200) : '—'}</td>
+                    <td className="faint">{a.dueDay ? `Day ${a.dueDay}` : '—'}</td>
+                    <td className="amount faint">{counts.get(a.id) || 0}</td>
+                    {actions(a)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add account' : 'Edit account'} width={620}>
         {editing && <AccountForm key={editing.id || 'new'} account={editing === 'new' ? null : editing} onSaved={() => setEditing(null)} onCancel={() => setEditing(null)} />}
       </Modal>
     </>

@@ -77,6 +77,9 @@ export function merchantKey(description = '') {
   return words.join(' ') || String(description).trim().toUpperCase().slice(0, 24);
 }
 
+// Card and loan accounts: an unmatched credit is a refund or payment, not income.
+const DEBT_ACCOUNT = /^(credit|auto-loan|mortgage|student-loan|personal-loan|medical-debt|other-debt)$/;
+
 export function categorize(description, amount, rules, accountType = "checking") {
   const text = String(description);
   for (const r of rules) {
@@ -85,7 +88,7 @@ export function categorize(description, amount, rules, accountType = "checking")
     } catch { /* ignore invalid user regex */ }
   }
   // Unmatched credits on a card are usually refunds, not income.
-  return amount > 0 && accountType !== "credit" ? "income" : "uncategorized";
+  return amount > 0 && !DEBT_ACCOUNT.test(accountType) ? "income" : "uncategorized";
 }
 
 /** User rules take priority over built-ins. */

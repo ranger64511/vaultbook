@@ -1,6 +1,7 @@
 // Shared helpers for the Main plan and Payoff theory pages.
 import { currentMonth, addMonths, monthLabel } from './format.js';
 import { simulatePayoff, defaultMinPayment } from './analytics.js';
+import { isDebt } from './accounts.js';
 
 export const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 
@@ -16,7 +17,8 @@ export const monthTicks = (len) => {
 };
 export const tickLabel = (m) => (m === 0 ? 'Now' : m % 12 === 0 ? `${m / 12}y` : `${m}mo`);
 
-export const payoffCards = (accounts) => accounts.filter((a) => a.type === 'credit' && a.balance > 0);
+/** Credit cards and loans with a balance, unless excluded from the payoff plan. */
+export const payoffDebts = (accounts) => accounts.filter((a) => isDebt(a.type) && a.balance > 0 && !a.excludeFromPayoff);
 export const debtsFrom = (cards) => cards.map((a) => ({ id: a.id, name: a.name, balance: a.balance, apr: a.apr || 0, minPayment: a.minPayment || 0 }));
 export const minimumTotal = (debts) => debts.reduce((s, d) => s + (d.minPayment || defaultMinPayment(d.balance, d.apr)), 0);
 export const defaultBudget = (debts) => Math.ceil((minimumTotal(debts) * 1.5) / 10) * 10;
@@ -61,7 +63,7 @@ export const firstPaymentMonth = () => addMonths(currentMonth(), 1);
 export function describeAdjustment(a, cardName) {
   const amt = `$${Number(a.amount || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   if (a.type === 'lump') {
-    return `${amt} lump sum in ${monthLabel(a.month, 'long')}${a.target ? ` to ${cardName(a.target) || 'a card'}` : ''}`;
+    return `${amt} lump sum in ${monthLabel(a.month, 'long')}${a.target ? ` to ${cardName(a.target) || 'a debt'}` : ''}`;
   }
   return `+${amt}/month from ${monthLabel(a.month, 'long')}${a.endMonth ? ` to ${monthLabel(a.endMonth, 'long')}` : ''}`;
 }

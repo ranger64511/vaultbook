@@ -5,6 +5,7 @@ import { ArrowDownRight, ArrowUpRight, CreditCard, Repeat, Upload, Wallet, Trend
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Amount } from '../components/ui.jsx';
 import MonthPicker from '../components/MonthPicker.jsx';
+import { isLoan } from '../lib/accounts.js';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
 import { useChartColors } from '../lib/theme.js';
 import { byCategory, byPeriod, detectRecurring, lastNMonths, summarize } from '../lib/analytics.js';
@@ -33,7 +34,10 @@ export default function Dashboard() {
   const recurring = useMemo(() => detectRecurring(txs, data.categories).filter((r) => r.active && data.recurring[r.key]?.status !== 'ignore'), [txs, data.categories, data.recurring]);
 
   const cards = data.accounts.filter((a) => a.type === 'credit');
-  const debt = cards.reduce((s, a) => s + (a.balance || 0), 0);
+  const loans = data.accounts.filter((a) => isLoan(a.type));
+  const cardDebt = cards.reduce((s, a) => s + (a.balance || 0), 0);
+  const loanDebt = loans.reduce((s, a) => s + (a.balance || 0), 0);
+  const debt = cardDebt + loanDebt;
   const limit = cards.reduce((s, a) => s + (a.creditLimit || 0), 0);
   const recurringMonthly = recurring.reduce((s, r) => s + r.monthly, 0);
   const flagged = recurring.filter((r) => data.recurring[r.key]?.status === 'cancel');
@@ -62,8 +66,10 @@ export default function Dashboard() {
       </PageHead>
 
       <div className="grid g-4">
-        <Stat icon={CreditCard} label="Credit card debt" value={money(debt)}
-          sub={limit ? `${pct((debt / limit) * 100)} of ${money0(limit)} limit used` : `${cards.length} card${cards.length === 1 ? '' : 's'}`} />
+        <Stat icon={CreditCard} label={loans.length ? 'Total debt' : 'Credit card debt'} value={money(debt)}
+          sub={loans.length
+            ? `Cards ${money0(cardDebt)} · Loans ${money0(loanDebt)}`
+            : limit ? `${pct((cardDebt / limit) * 100)} of ${money0(limit)} limit used` : `${cards.length} card${cards.length === 1 ? '' : 's'}`} />
         <Stat icon={Wallet} label={month === currentMonth() ? "Spent this month" : `Spent in ${monthLabel(month, "long")}`} value={money(cur.spending)}
           sub={prev.spending ? (
             <span className="row" style={{ gap: 4 }}>

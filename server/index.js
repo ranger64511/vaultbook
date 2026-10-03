@@ -213,15 +213,26 @@ app.use('/api', (req, res, next) => (req.path.startsWith('/auth/') ? next() : re
 
 app.get('/api/data', (req, res) => res.json(state.data));
 
-const ACCOUNT_TYPES = ['checking', 'savings', 'money-market', 'cd', 'cash', 'other', 'credit'];
-const ACCOUNT_FIELDS = ['name', 'type', 'institution', 'balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'last4', 'maturityDate'];
+const ACCOUNT_TYPES = [
+  'checking', 'savings', 'money-market', 'cd', 'cash', 'other', 'brokerage', 'retirement',
+  'credit', 'auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'medical-debt', 'other-debt',
+];
+const DEBT_TYPES = new Set(['credit', 'auto-loan', 'mortgage', 'student-loan', 'personal-loan', 'medical-debt', 'other-debt']);
+const isDebt = (type) => DEBT_TYPES.has(type);
+const ACCOUNT_FIELDS = [
+  'name', 'type', 'institution', 'balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'last4', 'maturityDate',
+  'expectedReturn', 'withdrawalCost', 'excludeFromPayoff',
+];
 function pickAccount(body) {
   const a = {};
   for (const k of ACCOUNT_FIELDS) if (body[k] !== undefined) a[k] = body[k];
-  for (const k of ['balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay']) {
+  for (const k of ['balance', 'apr', 'apy', 'minPayment', 'creditLimit', 'dueDay', 'expectedReturn', 'withdrawalCost']) {
     if (a[k] !== undefined) a[k] = a[k] === '' || a[k] === null || !Number.isFinite(Number(a[k])) ? null : Number(a[k]);
   }
   if (a.apy != null) a.apy = Math.min(100, Math.max(0, a.apy));
+  if (a.expectedReturn != null) a.expectedReturn = Math.min(50, Math.max(-50, a.expectedReturn));
+  if (a.withdrawalCost != null) a.withdrawalCost = Math.min(100, Math.max(0, a.withdrawalCost));
+  if (a.excludeFromPayoff !== undefined) a.excludeFromPayoff = a.excludeFromPayoff === true;
   if (a.maturityDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(a.maturityDate || '')) a.maturityDate = null;
   if (a.type && !ACCOUNT_TYPES.includes(a.type)) a.type = 'checking';
   return a;
@@ -380,7 +391,7 @@ app.post('/api/import/commit', (req, res) => {
   }
   if (statement) {
     if (Number.isFinite(statement.balance)) {
-      acct.balance = acct.type === 'credit' ? Math.abs(statement.balance) : statement.balance;
+      acct.balance = isDebt(acct.type) ? Math.abs(statement.balance) : statement.balance;
       acct.balanceAsOf = maxDate || localToday();
     }
     if (Number.isFinite(statement.minPayment)) acct.minPayment = statement.minPayment;
@@ -490,7 +501,7 @@ function cleanAdjustments(list) {
       amount,
       month: a.month,
       endMonth: a.type === 'increase' && MONTH_RE.test(a.endMonth || '') && a.endMonth >= a.month ? a.endMonth : null,
-      target: a.type === 'lump' && state.data.accounts.some((x) => x.id === a.target && x.type === 'credit') ? a.target : null,
+      target: a.type === 'lump' && state.data.accounts.some((x) => x.id === a.target && isDebt(x.type)) ? a.target : null,
       note: String(a.note || '').slice(0, 120),
     }];
   });

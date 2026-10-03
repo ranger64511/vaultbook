@@ -5,7 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Amount, CategorySelect } from '../components/ui.jsx';
 import { AccountForm } from './Accounts.jsx';
 import { money, shortDate, longDate } from '../lib/format.js';
-import { typeLabel } from '../lib/accounts.js';
+import { typeLabel, isDebt } from '../lib/accounts.js';
 
 export default function Import() {
   const { data, mutate, notify, accountsById } = useData();
@@ -138,7 +138,7 @@ export default function Import() {
                 <label className="info-box row" style={{ cursor: 'pointer' }}>
                   <input type="checkbox" checked={applyStatement} onChange={(e) => setApplyStatement(e.target.checked)} />
                   <span>Update <b>{account?.name}</b> from this statement:
-                    {st.balance != null && <> balance <b>{money(account?.type === 'credit' ? Math.abs(st.balance) : st.balance)}</b></>}
+                    {st.balance != null && <> balance <b>{money(isDebt(account?.type) ? Math.abs(st.balance) : st.balance)}</b></>}
                     {st.minPayment != null && <> · minimum payment <b>{money(st.minPayment)}</b></>}
                     {st.apr != null && <> · APR <b>{st.apr}%</b></>}
                     {st.creditLimit != null && <> · limit <b>{money(st.creditLimit)}</b></>}

@@ -6,17 +6,18 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented } from '../components/ui.jsx';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
 import PayoffSchedule from '../components/PayoffSchedule.jsx';
+import { isLoan } from '../lib/accounts.js';
 import { useChartColors } from '../lib/theme.js';
 import { simulatePayoff, detectRecurring, summarize } from '../lib/analytics.js';
 import { money, money0, moneyCompact, monthsFromNow } from '../lib/format.js';
 import {
-  duration, monthTicks, tickLabel, payoffCards, debtsFrom, minimumTotal, mainPlanSettings, toSimExtras, describeAdjustment, totalExtra,
+  duration, monthTicks, tickLabel, payoffDebts, debtsFrom, minimumTotal, mainPlanSettings, toSimExtras, describeAdjustment, totalExtra,
 } from '../lib/payoff.js';
 
 export default function Payoff() {
   const { data, mutate } = useData();
   const c = useChartColors();
-  const cards = payoffCards(data.accounts);
+  const cards = payoffDebts(data.accounts);
   const debts = debtsFrom(cards);
   const debtsKey = JSON.stringify(debts);
   const minTotal = minimumTotal(debts);
@@ -39,7 +40,7 @@ export default function Payoff() {
   const minOnly = useMemo(() => simulatePayoff(debts, 0, 'minimum'), [debtsKey]); // eslint-disable-line
   const other = useMemo(() => simulatePayoff(debts, budget, strategy === 'avalanche' ? 'snowball' : 'avalanche', 600, extras), [debtsKey, budget, strategy, extras]); // eslint-disable-line
 
-  // Money that could be redirected to cards.
+  // Money that could be redirected to debts.
   const cancelSavings = useMemo(() => detectRecurring(data.transactions, data.categories)
     .filter((r) => r.active && data.recurring[r.key]?.status === 'cancel').reduce((s, r) => s + r.monthly, 0), [data]);
   const avgWants = useMemo(() => {
@@ -52,8 +53,8 @@ export default function Payoff() {
     return (
       <>
         <PageHead title="Debt payoff plan" />
-        <Card><Empty icon={Target} title="No credit card balances" action={<Link className="btn primary" to="/accounts">Manage accounts</Link>}>
-          Add your credit cards with their current balance, APR and minimum payment to build a payoff plan. Importing a PDF statement fills these in automatically.
+        <Card><Empty icon={Target} title="No debts to pay off" action={<Link className="btn primary" to="/accounts">Manage accounts</Link>}>
+          Add your credit cards and loans (car, mortgage, student, personal, medical…) with their balance, APR and monthly payment to build a payoff plan. Importing a card’s PDF statement fills these in automatically.
         </Empty></Card>
       </>
     );
@@ -61,6 +62,7 @@ export default function Payoff() {
 
   const cardName = (id) => cards.find((a) => a.id === id)?.name;
   const missingApr = cards.filter((a) => !a.apr);
+  const missingPayment = cards.filter((a) => isLoan(a.type) && !a.minPayment);
   const tooLow = budget < minTotal - 0.005;
   const horizon = Math.min(Math.max(Number.isFinite(plan.months) ? plan.months : 120, 6), 360);
   const minHorizon = Number.isFinite(minOnly.months) ? Math.min(minOnly.months, 360) : 360;
@@ -84,14 +86,14 @@ export default function Payoff() {
 
   return (
     <>
-      <PageHead title="Debt payoff plan" subtitle="Your main plan: how fast your cards reach $0 and what each extra dollar saves.">
+      <PageHead title="Debt payoff plan" subtitle="Your main plan: how fast your debts reach $0 and what each extra dollar saves.">
         <Link className="btn" to="/payoff/theory"><FlaskConical size={16} /> Try a payoff theory</Link>
       </PageHead>
 
       <Card>
         <div className="row" style={{ gap: 24, alignItems: 'flex-end' }}>
           <div className="field" style={{ flex: '1 1 320px' }}>
-            <label htmlFor="budget">Total paid toward cards each month</label>
+            <label htmlFor="budget">Total paid toward debts each month</label>
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <input id="budget-range" type="range" min={Math.floor(minTotal)} max={Math.max(Math.ceil(minTotal * 5), 1000)} step="10" value={budget}
                 onChange={(e) => setBudget(Number(e.target.value))} style={{ flex: 1, height: 'auto', padding: 0, border: 0 }} aria-label="Monthly payment slider" />
@@ -105,10 +107,11 @@ export default function Payoff() {
           </div>
         </div>
         <p className="faint" style={{ marginTop: 12 }}>
-          <b>Avalanche</b> pays highest-APR cards first (least interest). <b>Snowball</b> pays smallest balances first (quick wins).
-          Minimums are always paid on every card; the rest goes to the focus card, and freed-up minimums roll over.
+          <b>Avalanche</b> pays highest-APR debts first (least interest). <b>Snowball</b> pays smallest balances first (quick wins).
+          Minimum and loan payments are always made on every debt; the rest goes to the focus debt, and freed-up minimums roll over.
         </p>
         {tooLow && <div className="error-box mt"><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> This is less than your combined minimum payments ({money(minTotal)}). Missing minimums causes late fees and credit damage.</div>}
+        {missingPayment.length > 0 && <div className="warn-box mt">Add the monthly payment for {missingPayment.map((a) => a.name).join(', ')} on the <Link to="/accounts">Accounts</Link> page. Until then it’s estimated like a credit card minimum.</div>}
         {missingApr.length > 0 && <div className="warn-box mt">Add the APR for {missingApr.map((a) => a.name).join(', ')} on the <Link to="/accounts">Accounts</Link> page for an accurate plan (currently assumed 0%).</div>}
 
         <div className="mt" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
@@ -158,7 +161,7 @@ export default function Payoff() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <Card title="Balance by card" action={<Legend items={cards.slice(0, 8).map((a) => ({ label: a.name, color: colorOf(a.id) }))} />}>
+        <Card title="Balance by debt" action={<Legend items={cards.slice(0, 8).map((a) => ({ label: a.name, color: colorOf(a.id) }))} />}>
           <div className="chart-box">
             <ResponsiveContainer>
               <AreaChart data={plan.schedule.slice(0, horizon + 1)}>
@@ -176,10 +179,10 @@ export default function Payoff() {
       </div>
 
       <div className="grid g-3-1 mt">
-        <Card className="flush" title="Payoff order" subtitle="Focus extra money on the top card until it’s gone, then move down the list.">
+        <Card className="flush" title="Payoff order" subtitle="Focus extra money on the top debt until it’s gone, then move down the list.">
           <div className="table-wrap">
             <table>
-              <thead><tr><th>#</th><th>Card</th><th className="amount">Balance</th><th className="amount">APR</th><th className="amount">Minimum</th><th className="amount">Interest</th><th>Paid off</th></tr></thead>
+              <thead><tr><th>#</th><th>Debt</th><th className="amount">Balance</th><th className="amount">APR</th><th className="amount">Minimum</th><th className="amount">Interest</th><th>Paid off</th></tr></thead>
               <tbody>
                 {ordered.map((d, i) => (
                   <tr key={d.id}>

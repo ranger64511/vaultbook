@@ -40,7 +40,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 |---|---|
 | **Statement import** | CSV, OFX/QFX, and PDF. Columns are auto-detected, rows are previewed before saving, duplicates are skipped, and any import can be undone. Credit card PDFs also fill in balance, minimum payment, APR, credit limit, and due date. |
 | **Transactions** | Search and filter by account or category. View one **day**, **week**, or **month** at a time (opening on today, this week, or this month; use the month picker to jump to any month, and arrows to step back and forward), or **all** transactions, with money-in and money-out totals. Re-categorize a transaction and Vault Book can remember the merchant for next time. |
-| **Accounts** | Checking, savings, money market, CDs, cash, and credit cards. Enter a savings APY and Vault Book estimates interest per month and year, the balance including interest to date, and a CD's value at maturity. |
+| **Accounts** | Checking, savings, money market, CDs, cash, investments (brokerage, retirement), credit cards, and loans (auto, mortgage, student, personal, medical, other). Shows totals and net worth. Enter a savings APY and Vault Book estimates interest per month and year, the balance including interest to date, and a CD's value at maturity. |
 | **Dashboard** | Total card debt and utilization, 12-month income vs. spending, weekly needs vs. wants, top spending categories, and recent activity. |
 | **Recurring charges** | Finds subscriptions and bills that repeat weekly, monthly, quarterly, or yearly. Shows yearly cost, flags price increases, and lets you mark each one *Plan to cancel* or *Keep*. Pick the month you expect each one to stop and see your planned savings month by month. Switch to *By month* to see which recurring charges were billed in any month and their total. **Planning only: Vault Book never cancels anything.** |
 | **Budget** | Monthly budgets per category, each marked **Need** or **Want**. One click suggests amounts from your 3-month averages, and spending is compared with the 50/30/20 guideline. |
@@ -75,7 +75,7 @@ On first launch you'll create a username and password.
 
 ## Using Vault Book
 
-1. **Add your accounts.** Go to *Accounts & cards* and add each checking, savings, money market, CD, cash, and credit card account. For savings-type accounts, add the APY to see the interest you earn. For cards, include the APR and minimum payment so the payoff plan is accurate.
+1. **Add your accounts.** Go to *Accounts & cards* and add each checking, savings, money market, CD, cash, investment, credit card, and loan account. For savings-type accounts, add the APY to see the interest you earn. For cards and loans, include the APR and minimum or monthly payment so the payoff plan is accurate. Untick “Include in the debt payoff plan” for debts you just want to pay normally (like a mortgage).
 2. **Import statements.** Go to *Import statements*, pick the account, and drop in a file. Review the preview, then click **Import**. Importing 2–3 months or more makes recurring-charge detection work well.
 3. **Clean up categories.** Fix any miscategorized transactions on the *Transactions* page. Vault Book offers to remember the merchant.
 4. **Review recurring charges.** Mark subscriptions you want to drop as *Plan to cancel* and choose when you expect to stop them. Vault Book shows how much you’d save each month. Then **cancel each one yourself** directly with the company. Vault Book does not contact merchants, banks, or card issuers.

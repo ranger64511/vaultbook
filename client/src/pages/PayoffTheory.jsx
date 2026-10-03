@@ -9,7 +9,7 @@ import PayoffSchedule from '../components/PayoffSchedule.jsx';
 import { useChartColors } from '../lib/theme.js';
 import { money, money0, moneyCompact, monthsFromNow, currentMonth, addMonths } from '../lib/format.js';
 import {
-  duration, monthTicks, tickLabel, payoffCards, debtsFrom, minimumTotal, mainPlanSettings, runPlan, monthsBetween,
+  duration, monthTicks, tickLabel, payoffDebts, debtsFrom, minimumTotal, mainPlanSettings, runPlan, monthsBetween,
   firstPaymentMonth, describeAdjustment, totalExtra,
 } from '../lib/payoff.js';
 
@@ -33,7 +33,7 @@ export function PlanningOnlyNotice() {
       <AlertTriangle size={18} style={{ flex: 'none', marginTop: 1 }} />
       <div>
         <b>Planning only: Vault Book never makes payments.</b> Theories and your main plan are estimates to help you decide.
-        Any lump sum or higher payment has to be made by you, through your card issuer or bank.
+        Any lump sum or higher payment has to be made by you, through your lender, card issuer or bank.
       </div>
     </div>
   );
@@ -43,7 +43,7 @@ export default function PayoffTheory() {
   const { data, mutate, notify } = useData();
   const navigate = useNavigate();
   const c = useChartColors();
-  const cards = payoffCards(data.accounts);
+  const cards = payoffDebts(data.accounts);
   const debts = debtsFrom(cards);
   const debtsKey = JSON.stringify(debts);
   const minTotal = minimumTotal(debts);
@@ -111,8 +111,8 @@ export default function PayoffTheory() {
     return (
       <>
         <PageHead title="Payoff theory" />
-        <Card><Empty icon={Target} title="No credit card balances" action={<Link className="btn primary" to="/accounts">Manage accounts</Link>}>
-          Add credit cards with balances on the Accounts page to try payoff theories.
+        <Card><Empty icon={Target} title="No debts to pay off" action={<Link className="btn primary" to="/accounts">Manage accounts</Link>}>
+          Add credit cards or loans with balances on the Accounts page to try payoff theories.
         </Empty></Card>
       </>
     );
@@ -217,7 +217,7 @@ export default function PayoffTheory() {
           </div>
           <div className="row" style={{ gap: 24, alignItems: 'flex-end' }}>
             <div className="field">
-              <label htmlFor="t-budget">Monthly payment toward cards</label>
+              <label htmlFor="t-budget">Monthly payment toward debts</label>
               <input id="t-budget" type="number" min="0" step="10" value={draft.budget} onChange={(e) => setDraft((d) => ({ ...d, budget: Number(e.target.value) || 0 }))} style={{ width: 140 }} />
               <span className="hint">Main plan: {money0(main.budget)}/mo · minimums {money0(minTotal)}/mo</span>
             </div>
@@ -265,8 +265,8 @@ export default function PayoffTheory() {
                       </td>
                       <td>
                         {a.type === 'lump' ? (
-                          <select className="inline" value={a.target || ''} onChange={(e) => update(a.id, { target: e.target.value || null })} aria-label="Which card" style={{ maxWidth: 220 }}>
-                            <option value="">Focus card ({draft.strategy})</option>
+                          <select className="inline" value={a.target || ''} onChange={(e) => update(a.id, { target: e.target.value || null })} aria-label="Which debt" style={{ maxWidth: 220 }}>
+                            <option value="">Focus debt ({draft.strategy})</option>
                             {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
                           </select>
                         ) : (
@@ -328,10 +328,10 @@ export default function PayoffTheory() {
         </div>
       </Card>
 
-      <Card className="mt flush" title="When each card is paid off">
+      <Card className="mt flush" title="When each debt is paid off">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Card</th><th className="amount">Balance</th><th className="amount">APR</th><th>Main plan</th><th>Theory</th><th>Change</th></tr></thead>
+            <thead><tr><th>Debt</th><th className="amount">Balance</th><th className="amount">APR</th><th>Main plan</th><th>Theory</th><th>Change</th></tr></thead>
             <tbody>
               {cards.map((a) => {
                 const m = mainPlan.debts.find((d) => d.id === a.id)?.paidOffMonth;
@@ -363,7 +363,7 @@ export default function PayoffTheory() {
         <div className="stack" style={{ gap: 12 }}>
           <p>Your main plan will become <b>{draft.name || 'this theory'}</b>:</p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
-            <li>{money0(draft.budget)}/month toward cards, {draft.strategy} strategy{draft.budget !== main.budget ? ` (was ${money0(main.budget)})` : ''}</li>
+            <li>{money0(draft.budget)}/month toward debts, {draft.strategy} strategy{draft.budget !== main.budget ? ` (was ${money0(main.budget)})` : ''}</li>
             {cleanDraft.adjustments.map((a) => <li key={a.id}>{describeAdjustment(a, cardName)}</li>)}
             {!cleanDraft.adjustments.length && <li>No extra payments</li>}
           </ul>
