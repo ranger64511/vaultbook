@@ -5,12 +5,12 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, CategorySelect } from '../components/ui.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
 import Household from '../components/Household.jsx';
+import MonthlySettings from '../components/MonthlySettings.jsx';
 
 export default function Settings({ role }) {
   const { data, mutate, notify, categoriesById } = useData();
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState(null);
-  const [income, setIncome] = useState(data.settings.monthlyIncome || '');
   const [rule, setRule] = useState({ pattern: '', category: 'subscriptions' });
 
   const changePassword = async (e) => {
@@ -55,12 +55,7 @@ export default function Settings({ role }) {
 
         <div className="stack">
           <Card title="Appearance"><ThemeToggle /></Card>
-          <Card title="Expected monthly income" subtitle="Optional. Used by the budget when a month’s income isn’t fully imported yet.">
-            <div className="row">
-              <input type="number" min="0" step="50" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="e.g. 4800" style={{ flex: 1 }} />
-              <button className="btn" onClick={() => mutate('/settings', { method: 'PUT', body: { monthlyIncome: Number(income) || 0 } }, 'Saved')}>Save</button>
-            </div>
-          </Card>
+          <MonthlySettings />
           <Card title="Backup & export">
             <div className="stack" style={{ gap: 10 }}>
               <a className="btn" href="/api/backup" download><Download size={16} /> Download encrypted backup</a>

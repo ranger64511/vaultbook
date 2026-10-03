@@ -55,7 +55,8 @@ export default function Budget() {
   const totalBudget = spendCats.reduce((s, x) => s + (Number(x.budget) || 0), 0);
   const needsBudget = spendCats.filter((x) => x.kind === 'need').reduce((s, x) => s + (Number(x.budget) || 0), 0);
   const sum = summarize(data.transactions.filter((t) => t.date.startsWith(month)), data.categories);
-  const baseIncome = data.settings.monthlyIncome || income || avgIncome;
+  const monthIncome = data.settings.incomeByMonth?.[month];
+  const baseIncome = monthIncome ?? (data.settings.monthlyIncome || income || avgIncome);
   const leftover = baseIncome - sum.spending;
 
   const split = baseIncome > 0 ? [
@@ -118,7 +119,7 @@ export default function Budget() {
       </PageHead>
 
       <div className="grid g-4">
-        <Stat label="Income" value={money0(baseIncome)} sub={data.settings.monthlyIncome ? 'Expected (from settings)' : income ? 'Received this month' : avgIncome ? '3-month average' : 'Set expected income in Settings'} />
+        <Stat label="Income" value={money0(baseIncome)} sub={monthIncome != null ? 'Expected for this month (Settings)' : data.settings.monthlyIncome ? 'Usual expected income (Settings)' : income ? 'Received this month' : avgIncome ? '3-month average' : 'Set expected income in Settings'} />
         <Stat label="Budgeted" value={money0(totalBudget)} sub={`Needs ${money0(needsBudget)} · Wants ${money0(totalBudget - needsBudget)}`} />
         <Stat label="Spent" value={money0(sum.spending)} sub={totalBudget ? `${pct((sum.spending / totalBudget) * 100)} of budget` : 'No budget set yet'} />
         <Stat label="Left over" value={<span className={leftover >= 0 ? 'pos' : 'bad'}>{money0(leftover)}</span>} sub={leftover > 0 ? 'Available for card payoff & savings' : 'Spending exceeds income'} />

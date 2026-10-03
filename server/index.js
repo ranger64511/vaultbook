@@ -657,6 +657,16 @@ app.put('/api/settings', (req, res) => {
   if (s.payoffBudget !== undefined) next.payoffBudget = Math.max(0, Number(s.payoffBudget) || 0);
   if (s.payoffStrategy !== undefined) next.payoffStrategy = ['avalanche', 'snowball'].includes(s.payoffStrategy) ? s.payoffStrategy : 'avalanche';
   if (s.monthlyIncome !== undefined) next.monthlyIncome = Math.max(0, Number(s.monthlyIncome) || 0);
+  // Expected income for specific months, overriding the usual amount (null clears a month).
+  if (s.incomeByMonth && typeof s.incomeByMonth === 'object') {
+    const map = { ...(next.incomeByMonth || {}) };
+    for (const [m, v] of Object.entries(s.incomeByMonth).slice(0, 120)) {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(m)) continue;
+      if (v === null || v === '') delete map[m];
+      else if (Number.isFinite(Number(v))) map[m] = Math.max(0, Number(v));
+    }
+    next.incomeByMonth = map;
+  }
   // Extra payments applied to the Main plan, and saved Payoff theory scenarios.
   // These are plans only: Vault Book never makes a payment.
   if (s.payoffAdjustments !== undefined) next.payoffAdjustments = cleanAdjustments(s.payoffAdjustments);
@@ -757,11 +767,12 @@ app.get('/api/export.csv', (req, res) => {
   const cats = new Map(state.data.categories.map((c) => [c.id, c.name]));
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = ['Date,Account,Description,Amount,Category,Notes'];
-  for (const t of [...state.data.transactions].sort((a, b) => a.date.localeCompare(b.date))) {
+  const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : null;
+  for (const t of [...state.data.transactions].filter((x) => !month || x.date.startsWith(month)).sort((a, b) => a.date.localeCompare(b.date))) {
     lines.push([t.date, accts.get(t.accountId), t.description, t.amount.toFixed(2), cats.get(t.category) || t.category, t.notes].map(esc).join(','));
   }
   res.set('Content-Type', 'text/csv');
-  res.set('Content-Disposition', 'attachment; filename="transactions.csv"');
+  res.set('Content-Disposition', `attachment; filename="transactions${month ? `-${month}` : ''}.csv"`);
   res.send(lines.join('\r\n'));
 });
 
