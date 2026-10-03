@@ -5,6 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented, KindBadge, Modal } from '../components/ui.jsx';
 import { axisProps } from '../components/charts.jsx';
 import { useChartColors } from '../lib/theme.js';
+import MonthPicker from '../components/MonthPicker.jsx';
 import { detectRecurring, projectPlannedSavings, plannedStopMonth } from '../lib/analytics.js';
 import { money, money0, moneyCompact, longDate, shortDate, monthLabel, monthShort, currentMonth } from '../lib/format.js';
 
@@ -27,6 +28,7 @@ export default function Recurring() {
   const { data, mutate, notify, categoriesById, accountsById } = useData();
   const c = useChartColors();
   const [view, setView] = useState('review');
+  const [month, setMonth] = useState(null); // null = all months, else YYYY-MM
   const [planning, setPlanning] = useState(null); // recurring item being added to the plan
   const all = useMemo(() => detectRecurring(data.transactions, data.categories), [data.transactions, data.categories]);
   const plan = (r) => data.recurring[r.key];
@@ -35,12 +37,29 @@ export default function Recurring() {
   const active = all.filter((r) => r.active && status(r) !== 'ignore');
   const planned = active.filter((r) => status(r) === 'cancel');
   const wantsActive = active.filter((r) => r.kind === 'want');
+  // In "By month", each charge shows what it billed that month; for the current
+  // month, a charge expected later in the month counts as expected.
+  const inMonth = useMemo(() => {
+    if (!month) return null;
+    const m = new Map();
+    for (const r of all) {
+      const billed = r.history.filter((h) => h.date.startsWith(month)).reduce((s, h) => s + h.amount, 0);
+      const expected = month === currentMonth() && r.active && r.next.startsWith(month) && r.next > r.last ? r.amount : 0;
+      if (billed || expected) m.set(r.key, { billed, expected });
+    }
+    return m;
+  }, [all, month]);
+  const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))], [data.transactions]);
+  const byMonth = (rs) => (inMonth ? rs.filter((r) => inMonth.has(r.key)) : rs);
   const lists = {
-    review: active.filter((r) => !status(r)),
-    cancel: planned,
-    keep: active.filter((r) => status(r) === 'keep'),
-    inactive: all.filter((r) => !r.active || status(r) === 'ignore'),
+    review: byMonth(active.filter((r) => !status(r))),
+    cancel: byMonth(planned),
+    keep: byMonth(active.filter((r) => status(r) === 'keep')),
+    inactive: byMonth(all.filter((r) => !r.active || status(r) === 'ignore')),
   };
+  const monthTotals = inMonth && [...inMonth.values()].reduce((t, v) => ({
+    billed: t.billed + v.billed, expected: t.expected + v.expected, n: t.n + (v.billed ? 1 : 0),
+  }), { billed: 0, expected: 0, n: 0 });
   const list = lists[view];
 
   const savings = useMemo(
@@ -92,19 +111,34 @@ export default function Recurring() {
             { value: 'keep', label: `Keeping (${lists.keep.length})` },
             { value: 'inactive', label: `Ended / hidden (${lists.inactive.length})` },
           ]} />
-          {view === 'cancel' && planned.length > 0 && (
-            <span className="faint">Cancel each one yourself with the company. Once it stops showing up on your statements it will move to “Ended”.</span>
-          )}
+          <div className="row" style={{ gap: 10 }}>
+            <Segmented label="Months" value={month ? 'month' : 'all'} onChange={(v) => setMonth(v === 'all' ? null : currentMonth())}
+              options={[{ value: 'all', label: 'All months' }, { value: 'month', label: 'By month' }]} />
+            {month && <MonthPicker value={month} onChange={setMonth} months={months} />}
+          </div>
         </div>
+        {month && (
+          <div className="period-bar spread">
+            <span>
+              <b>{monthLabel(month, 'long')}:</b> {money(monthTotals.billed)} billed across {monthTotals.n} recurring charge{monthTotals.n === 1 ? '' : 's'}
+              {monthTotals.expected > 0 && <span className="faint"> · ~{money(monthTotals.expected)} more expected later this month</span>}
+            </span>
+          </div>
+        )}
+        {view === 'cancel' && planned.length > 0 && (
+          <div className="faint" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+            Cancel each one yourself with the company. Once it stops showing up on your statements it will move to “Ended”.
+          </div>
+        )}
         {!list.length ? (
           <Empty icon={Repeat} title={all.length ? 'Nothing here' : 'No recurring charges found yet'}>
-            {all.length ? 'Nothing in this list right now.' : 'Import at least 2–3 months of statements so repeating charges can be detected.'}
+            {all.length ? (month ? `None of these were billed in ${monthLabel(month, 'long')}.` : 'Nothing in this list right now.') : 'Import at least 2–3 months of statements so repeating charges can be detected.'}
           </Empty>
         ) : (
           <div className="table-wrap">
             <table>
               <thead><tr>
-                <th>Merchant</th><th>Category</th><th>How often</th><th className="amount">Amount</th><th className="amount">Per year</th>
+                <th>Merchant</th><th>Category</th><th>How often</th><th className="amount">Amount</th><th className="amount">{month ? `In ${monthShort(month)}` : 'Per year'}</th>
                 <th>{view === 'cancel' ? 'Plan to stop by' : 'Last / next'}</th><th />
               </tr></thead>
               <tbody>
@@ -120,7 +154,12 @@ export default function Recurring() {
                       {money(r.amount)}
                       {r.priceChanged && <div><span className="badge warn" title={`Last charge was ${money(r.lastAmount)}`}>Changed: {money(r.lastAmount)}</span></div>}
                     </td>
-                    <td className="amount"><b>{money0(r.yearly)}</b></td>
+                    <td className="amount">
+                      {inMonth ? (inMonth.get(r.key).billed
+                        ? <b>{money(inMonth.get(r.key).billed)}</b>
+                        : <span className="faint" title="Not billed yet this month">~{money(inMonth.get(r.key).expected)} expected</span>)
+                        : <b>{money0(r.yearly)}</b>}
+                    </td>
                     {view === 'cancel' ? (
                       <td style={{ whiteSpace: 'nowrap' }}>
                         <input type="month" value={plannedStopMonth(r, plan(r))} min={currentMonth()} aria-label={`Plan to stop ${r.name} by`}
