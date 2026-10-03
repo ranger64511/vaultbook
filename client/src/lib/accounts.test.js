@@ -44,3 +44,23 @@ test('assets: equity after a linked loan, and expected yearly change', () => {
   assert.equal(car.yearlyChange, -3000);
   assert.ok(isAsset('home') && !hasTransactions('vehicle') && hasTransactions('checking'));
 });
+
+import { balanceAtMonthEnd, monthActivity } from './accounts.js';
+
+test('month-end balances are worked back from the current balance', () => {
+  const txs = [
+    { accountId: 'c', date: '2026-09-20', amount: -100 },
+    { accountId: 'c', date: '2026-10-02', amount: 2000 },
+    { accountId: 'c', date: '2026-10-03', amount: -50 },
+    { accountId: 'k', date: '2026-10-01', amount: -80 }, // card charge in October
+    { accountId: 'k', date: '2026-10-02', amount: 300 }, // card payment in October
+  ];
+  const checking = { id: 'c', type: 'checking', balance: 5000, balanceAsOf: '2026-10-03' };
+  assert.deepEqual(balanceAtMonthEnd(checking, txs, '2026-09', '2026-10-03'), { balance: 3050, estimated: true });
+  const card = { id: 'k', type: 'credit', balance: 1000, balanceAsOf: '2026-10-03' };
+  // Owed at end of Sept = 1000 now, + 300 paid since, − 80 charged since.
+  assert.deepEqual(balanceAtMonthEnd(card, txs, '2026-09', '2026-10-03'), { balance: 1220, estimated: true });
+  assert.deepEqual(balanceAtMonthEnd(checking, txs, '2026-10', '2026-10-03'), { balance: 5000, estimated: false });
+  assert.deepEqual(balanceAtMonthEnd({ id: 'h', type: 'home', balance: 300000 }, txs, '2026-09', '2026-10-03'), { balance: 300000, estimated: false });
+  assert.deepEqual(monthActivity(checking, txs, '2026-10'), { in: 2000, out: 50, count: 2 });
+});

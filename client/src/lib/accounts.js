@@ -84,3 +84,33 @@ export function interestInfo(acct, today = new Date()) {
   }
   return info;
 }
+
+/**
+ * An account's balance at the end of a month, worked back from its current balance:
+ * transactions after the month end (up to the balance date) are undone. Money out is
+ * negative, so for debts (balance = amount owed) the sign flips. Accounts without
+ * transactions (investments, property) just keep their current value.
+ */
+export function balanceAtMonthEnd(acct, transactions, month, today = isoDate(new Date())) {
+  const current = Number(acct.balance) || 0;
+  const end = isoDate(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)); // last day of month
+  if (!hasTransactions(acct.type) || end >= today) return { balance: current, estimated: false };
+  const asOf = acct.balanceAsOf || today;
+  let after = 0;
+  for (const t of transactions) {
+    if (t.accountId === acct.id && t.date > end && t.date <= asOf) after += t.amount;
+  }
+  after = Math.round(after * 100) / 100;
+  return { balance: isDebt(acct.type) ? current + after : current - after, estimated: true };
+}
+
+/** Money in / out and count of an account's transactions in a month. */
+export function monthActivity(acct, transactions, month) {
+  const out = { in: 0, out: 0, count: 0 };
+  for (const t of transactions) {
+    if (t.accountId !== acct.id || !t.date.startsWith(month)) continue;
+    if (t.amount > 0) out.in += t.amount; else out.out -= t.amount;
+    out.count++;
+  }
+  return out;
+}

@@ -271,3 +271,4 @@ dialog.modal .extra-row { border: 0; padding: 0; background: transparent; }
 .worth-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 18px; }
 .worth-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; margin: 0 -6px; border-radius: 7px; color: var(--text); font-size: 13px; }
 .worth-item:hover { background: var(--surface-hover); }
+tr.dim-soft td { opacity: 0.6; }

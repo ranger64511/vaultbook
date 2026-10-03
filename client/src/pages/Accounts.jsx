@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   CreditCard, Landmark, PiggyBank, Coins, CalendarClock, Banknote, Wallet, Plus, Pencil, Trash2, TrendingUp,
   Car, Home, GraduationCap, HandCoins, Stethoscope, Receipt, LineChart, Briefcase, Scale, Building2, CarFront, Gem,
 } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Modal, Stat } from '../components/ui.jsx';
-import { money, money0, pct, longDate } from '../lib/format.js';
-import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment, isAsset, assetInfo } from '../lib/accounts.js';
+import { money, money0, pct, longDate, monthLabel, currentMonth } from '../lib/format.js';
+import MonthPicker from '../components/MonthPicker.jsx';
+import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment, isAsset, assetInfo, hasTransactions, balanceAtMonthEnd, monthActivity } from '../lib/accounts.js';
 
 const ICON = {
   credit: CreditCard, checking: Landmark, savings: PiggyBank, 'money-market': Coins, cd: CalendarClock, cash: Banknote, other: Wallet,
@@ -197,6 +198,20 @@ export default function Accounts() {
   const equity = assets.reduce((s, a) => s + assetInfo(a, data.accounts).equity, 0);
   const yearly = [...interest.values()].reduce((s, i) => s + (i?.yearly || 0), 0);
 
+  // Month view: activity per account and (for past months) estimated month-end balances.
+  const [month, setMonth] = useState(currentMonth);
+  const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))], [data.transactions]);
+  const past = month < currentMonth();
+  const endLabel = `end of ${monthLabel(month, 'long')}`;
+  const monthRows = useMemo(() => data.accounts.filter((a) => hasTransactions(a.type)).map((a) => ({
+    a, ...monthActivity(a, data.transactions, month), end: balanceAtMonthEnd(a, data.transactions, month),
+  })), [data.accounts, data.transactions, month]);
+  const endOf = (list) => list.reduce((s, a) => s + (monthRows.find((r) => r.a.id === a.id)?.end.balance ?? (a.balance || 0)), 0);
+  const shownCash = past ? endOf(banks) : cash;
+  const shownDebt = past ? endOf([...cards, ...loans]) : debt;
+  const shownNet = shownCash + invested + property - shownDebt;
+  const activityTotals = monthRows.reduce((t, r) => ({ in: t.in + r.in, out: t.out + r.out, count: t.count + r.count }), { in: 0, out: 0, count: 0 });
+
   const actions = (a) => (
     <td style={{ width: 90, whiteSpace: 'nowrap' }}>
       <button className="btn ghost icon sm" aria-label="Edit" onClick={() => setEditing(a)}><Pencil size={15} /></button>
@@ -210,6 +225,7 @@ export default function Accounts() {
   return (
     <>
       <PageHead title="Accounts" subtitle="Bank accounts, savings, investments, property, credit cards and loans.">
+        {data.accounts.length > 0 && <MonthPicker value={month} onChange={setMonth} months={months} />}
         <button className="btn primary" onClick={() => setEditing('new')}><Plus size={16} /> Add account</button>
       </PageHead>
 
@@ -219,16 +235,60 @@ export default function Accounts() {
         </Empty></Card>
       ) : (
         <div className="grid g-4">
-          <Stat icon={PiggyBank} label="Bank & cash" value={money0(cash)} sub={yearly > 0 ? <span className="pos">+{money(yearly)}/yr interest</span> : `${banks.length} account${banks.length === 1 ? '' : 's'}`} />
+          <Stat icon={PiggyBank} label={past ? `Bank & cash, ${endLabel}` : 'Bank & cash'} value={money0(shownCash)} sub={yearly > 0 ? <span className="pos">+{money(yearly)}/yr interest</span> : `${banks.length} account${banks.length === 1 ? '' : 's'}`} />
           <Stat icon={TrendingUp} label="Investments" value={money0(invested)} sub={`${investments.length} account${investments.length === 1 ? '' : 's'}`} />
           {assets.length > 0 && <Stat icon={Building2} label="Property & assets" value={money0(property)} sub={`${money0(equity)} equity after linked loans`} />}
-          <Stat icon={CreditCard} label="Total debt" value={money0(debt)} sub={`${cards.length} card${cards.length === 1 ? '' : 's'} · ${loans.length} loan${loans.length === 1 ? '' : 's'}`} />
-          <Stat icon={Scale} label="Net worth" value={<span className={cash + invested + property - debt >= 0 ? 'pos' : 'bad'}>{money0(cash + invested + property - debt)}</span>} sub="What you have minus what you owe" />
+          <Stat icon={CreditCard} label={past ? `Total debt, ${endLabel}` : 'Total debt'} value={money0(shownDebt)} sub={`${cards.length} card${cards.length === 1 ? '' : 's'} · ${loans.length} loan${loans.length === 1 ? '' : 's'}`} />
+          <Stat icon={Scale} label={past ? `Net worth, ${endLabel}` : 'Net worth'} value={<span className={shownNet >= 0 ? 'pos' : 'bad'}>{money0(shownNet)}</span>}
+            sub={past ? 'Estimated from transactions; investments & property at current value' : 'What you have minus what you owe'} />
         </div>
       )}
 
+      {monthRows.length > 0 && (
+        <Card className="mt flush" title={`Account activity · ${monthLabel(month, 'long')}`}
+          subtitle={past
+            ? 'Money in and out during the month, and each balance at month end (worked back from today’s balance and the transactions since).'
+            : 'Money in and out so far this month, and current balances.'}>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Account</th><th className="amount">Money in</th><th className="amount">Money out</th><th className="amount">Net</th>
+                <th className="amount">Transactions</th><th className="amount">{past ? `Balance, ${endLabel}` : 'Balance now'}</th>
+              </tr></thead>
+              <tbody>
+                {monthRows.filter((r) => r.count).map(({ a, in: inn, out, count, end }) => (
+                  <tr key={a.id}>
+                    <td><AccountCell a={a} /></td>
+                    <td className="amount">{inn ? <span className="pos">+{money(inn)}</span> : <span className="faint">—</span>}</td>
+                    <td className="amount">{out ? <span>−{money(out)}</span> : <span className="faint">—</span>}</td>
+                    <td className="amount">{count ? <b className={inn - out >= 0 ? 'pos' : ''}>{inn - out >= 0 ? '+' : '−'}{money(Math.abs(inn - out))}</b> : <span className="faint">—</span>}</td>
+                    <td className="amount faint">{count}</td>
+                    <td className="amount"><b>{money(end.balance)}</b>{isDebt(a.type) && <div className="faint">owed</div>}{end.estimated && <div className="faint">estimated</div>}</td>
+                  </tr>
+                ))}
+                <tr className="group-row">
+                  <td>Total</td>
+                  <td className="amount pos">+{money(activityTotals.in)}</td>
+                  <td className="amount">−{money(activityTotals.out)}</td>
+                  <td className="amount">{activityTotals.in - activityTotals.out >= 0 ? '+' : '−'}{money(Math.abs(activityTotals.in - activityTotals.out))}</td>
+                  <td className="amount">{activityTotals.count}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="faint" style={{ padding: '10px 20px' }}>
+            {(() => {
+              const quiet = monthRows.filter((r) => !r.count).map((r) => r.a.name);
+              return quiet.length ? <>No activity this month: {quiet.join(', ')}. </> : null;
+            })()}
+            Totals include transfers between your own accounts (like card payments), so money can appear on both sides.
+          </p>
+        </Card>
+      )}
+
       {banks.length > 0 && (
-        <Card title="Bank & cash" subtitle="Interest is estimated from each account’s APY, compounding daily." className="mt flush">
+        <Card title="Bank & cash" subtitle="Current balances. Interest is estimated from each account’s APY, compounding daily." className="mt flush">
           <div className="table-wrap">
             <table>
               <thead><tr>
