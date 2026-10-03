@@ -54,12 +54,12 @@ export default function App() {
 
   return (
     <DataProvider>
-      <Shell username={auth.username} onLogout={logout} />
+      <Shell username={auth.username} role={auth.role} multiUser={auth.multiUser} onLogout={logout} />
     </DataProvider>
   );
 }
 
-function Shell({ username, onLogout }) {
+function Shell({ username, role, multiUser, onLogout }) {
   const { data, error } = useData();
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -92,7 +92,7 @@ function Shell({ username, onLogout }) {
           <ThemeToggle />
           <div className="user-chip">
             <span className="avatar">{username?.[0]}</span>
-            <span className="grow ellipsis">{username}</span>
+            <span className="grow ellipsis">{username}{multiUser && <span className="faint"> · {role === 'admin' ? 'admin' : 'member'}</span>}</span>
             <button className="btn ghost icon sm" onClick={onLogout} title="Lock & sign out" aria-label="Sign out">
               <LogOut size={16} />
             </button>
@@ -116,7 +116,7 @@ function Shell({ username, onLogout }) {
               <Route path="/budget" element={<Budget />} />
               <Route path="/payoff" element={<Payoff />} />
               <Route path="/payoff/theory" element={<PayoffTheory />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings" element={<Settings role={role} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           )}

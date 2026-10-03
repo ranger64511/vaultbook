@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
+import https from 'node:https';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
@@ -13,10 +17,38 @@ import { parseStatementLines } from './parsers/pdf.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROD = process.argv.includes('--prod') || process.env.NODE_ENV === 'production';
 const PORT = Number(process.env.VAULTBOOK_PORT || 4310);
-const HOST = '127.0.0.1'; // never expose financial data to the network
 const IDLE_MS = 30 * 60 * 1000;
 const MAX_SESSION_MS = 12 * 60 * 60 * 1000;
 const COOKIE = 'vb_session';
+
+// Network: only this computer, unless the admin turned on home-network access
+// (Settings > Household). Changing it takes effect after a restart.
+const OPTIONS_AT_START = vault.serverOptions();
+const HOST = process.env.VAULTBOOK_HOST || (OPTIONS_AT_START.lanAccess ? '0.0.0.0' : '127.0.0.1');
+const LAN_ACTIVE = HOST !== '127.0.0.1' && HOST !== 'localhost';
+// Optional HTTPS (recommended for home-network access): paths to a certificate and key.
+const TLS = process.env.VAULTBOOK_TLS_CERT && process.env.VAULTBOOK_TLS_KEY
+  ? { cert: fs.readFileSync(process.env.VAULTBOOK_TLS_CERT), key: fs.readFileSync(process.env.VAULTBOOK_TLS_KEY) }
+  : null;
+
+/** This machine's IPv4 addresses on the local network. */
+function lanAddresses() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter((n) => n && n.family === 'IPv4' && !n.internal)
+    .map((n) => n.address);
+}
+
+// Host-header allow-list (blocks DNS rebinding). With LAN access, this machine's own
+// addresses and names are allowed too, plus any in VAULTBOOK_ALLOWED_HOSTS.
+const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+if (LAN_ACTIVE) {
+  for (const ip of lanAddresses()) ALLOWED_HOSTS.add(ip);
+  const name = os.hostname().toLowerCase();
+  ALLOWED_HOSTS.add(name);
+  ALLOWED_HOSTS.add(`${name}.local`);
+  ALLOWED_HOSTS.add(`${name}.lan`);
+}
+for (const h of (process.env.VAULTBOOK_ALLOWED_HOSTS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)) ALLOWED_HOSTS.add(h);
 
 /** Today's date in the computer's own time zone, as YYYY-MM-DD. */
 const localToday = () => {
@@ -25,17 +57,24 @@ const localToday = () => {
 };
 
 // ---------------------------------------------------------------- state ---
-// The decrypted data key and vault contents exist only in memory while unlocked.
-const state = { dek: null, data: null, username: null };
-const sessions = new Map(); // token -> { created, lastSeen }
+// Each signed-in user's decrypted data key and vault exist only in memory while unlocked.
+const unlocked = new Map(); // userId -> { user, dek, data }
+const sessions = new Map(); // token -> { userId, created, lastSeen }
+// Every request runs "as" its signed-in user, so concurrent users never see each other's data.
+const current = new AsyncLocalStorage();
+const state = {
+  get dek() { return current.getStore()?.dek; },
+  get data() { return current.getStore()?.data; },
+  get user() { return current.getStore()?.user; },
+  get userId() { return current.getStore()?.user.id; },
+  get username() { return current.getStore()?.user.username; },
+};
 
-function lock() {
-  sessions.clear();
-  pendingUploads.clear();
-  state.dek?.fill(0);
-  state.dek = null;
-  state.data = null;
-  state.username = null;
+function lockUser(userId) {
+  const e = unlocked.get(userId);
+  if (e) { e.dek.fill(0); unlocked.delete(userId); }
+  for (const [t, s] of sessions) if (s.userId === userId) sessions.delete(t);
+  for (const [id, p] of pendingUploads) if (p.userId === userId) pendingUploads.delete(id);
 }
 
 setInterval(() => {
@@ -43,7 +82,8 @@ setInterval(() => {
   for (const [t, s] of sessions) {
     if (now - s.lastSeen > IDLE_MS || now - s.created > MAX_SESSION_MS) sessions.delete(t);
   }
-  if (!sessions.size && state.dek) lock();
+  const active = new Set([...sessions.values()].map((s) => s.userId));
+  for (const id of unlocked.keys()) if (!active.has(id)) lockUser(id);
 }, 60 * 1000).unref();
 
 function freshData() {
@@ -71,7 +111,7 @@ function migrate(data) {
 }
 
 function persist() {
-  vault.saveVault(state.dek, state.data);
+  vault.saveVault(state.userId, state.dek, state.data);
 }
 
 // ----------------------------------------------------------------- app ----
@@ -90,16 +130,17 @@ app.use(helmet({
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
-      upgradeInsecureRequests: null, // served over plain http on localhost
+      upgradeInsecureRequests: null, // may be served over plain http on a home network
     },
   },
+  hsts: !!TLS,
   crossOriginEmbedderPolicy: false,
 }));
 
 // Block DNS-rebinding: only answer requests addressed to this machine.
 app.use((req, res, next) => {
-  const host = (req.headers.host || '').replace(/:\d+$/, '');
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) return res.status(403).send('Forbidden host');
+  const host = (req.headers.host || '').replace(/:\d+$/, '').toLowerCase();
+  if (!ALLOWED_HOSTS.has(host)) return res.status(403).send('Forbidden host');
   next();
 });
 
@@ -128,16 +169,32 @@ function getToken(req) {
   return m ? m[1] : null;
 }
 
-function startSession(res) {
+function startSession(res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { created: Date.now(), lastSeen: Date.now() });
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'strict', secure: false, path: '/', maxAge: MAX_SESSION_MS });
+  sessions.set(token, { userId, created: Date.now(), lastSeen: Date.now() });
+  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'strict', secure: !!TLS, path: '/', maxAge: MAX_SESSION_MS });
+}
+
+/** The signed-in user's unlocked vault for this request, if any. */
+function entryFor(req) {
+  const s = sessions.get(getToken(req));
+  const e = s && unlocked.get(s.userId);
+  if (e) s.lastSeen = Date.now();
+  return e || null;
 }
 
 function requireAuth(req, res, next) {
-  const s = sessions.get(getToken(req));
-  if (!s || !state.dek) return res.status(401).json({ error: 'Not logged in' });
-  s.lastSeen = Date.now();
+  const e = entryFor(req);
+  if (!e) return res.status(401).json({ error: 'Not logged in' });
+  req.vb = e;
+  current.run(e, next);
+}
+
+/** Re-enters the user's context after middleware (like uploads) that loses it. */
+const withUser = (fn) => (req, res, next) => current.run(req.vb, () => fn(req, res, next));
+
+function requireAdmin(req, res, next) {
+  if (state.user?.role !== 'admin') return res.status(403).json({ error: 'Only the household admin can do this' });
   next();
 }
 
@@ -164,8 +221,14 @@ function validCredentials(username, password) {
 
 // ---------------------------------------------------------------- auth ----
 app.get('/api/auth/status', (req, res) => {
-  const authed = sessions.has(getToken(req)) && !!state.dek;
-  res.json({ setUp: vault.isSetUp(), authenticated: authed, username: authed ? state.username : null });
+  const e = entryFor(req);
+  res.json({
+    setUp: vault.isSetUp(),
+    authenticated: !!e,
+    username: e?.user.username ?? null,
+    role: e?.user.role ?? null,
+    multiUser: vault.serverOptions().multiUser,
+  });
 });
 
 app.post('/api/auth/setup', asyncRoute(async (req, res) => {
@@ -174,10 +237,10 @@ app.post('/api/auth/setup', asyncRoute(async (req, res) => {
   const err = validCredentials(username, password);
   if (err) return res.status(400).json({ error: err });
   const data = freshData();
-  state.dek = await vault.setup(username, password, data);
-  state.data = data;
-  state.username = username;
-  startSession(res);
+  // The first account is the household admin.
+  const { user, dek } = await vault.createUser(username, password, 'admin', data);
+  unlocked.set(user.id, { user, dek, data });
+  startSession(res, user.id);
   res.json({ ok: true, username });
 }));
 
@@ -186,39 +249,43 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const wait = throttled(ip);
   if (wait) return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
   const { username, password } = req.body || {};
-  const dek = typeof username === 'string' && typeof password === 'string'
+  const result = typeof username === 'string' && typeof password === 'string'
     ? await vault.unlock(username, password) : null;
-  if (!dek) {
+  if (!result) {
     recordFailure(ip);
     return res.status(401).json({ error: 'Incorrect username or password' });
   }
   failures.delete(ip);
-  if (!state.dek) {
-    state.dek = dek;
-    state.data = migrate(vault.loadVault(dek));
-    state.username = username;
-  } else {
-    dek.fill(0);
+  if (result.user.role !== 'admin' && !vault.serverOptions().multiUser) {
+    result.dek.fill(0);
+    return res.status(403).json({ error: 'Household mode is turned off. Ask your household admin to turn it on.' });
   }
-  startSession(res);
-  res.json({ ok: true, username });
+  if (!unlocked.has(result.user.id)) {
+    unlocked.set(result.user.id, { user: result.user, dek: result.dek, data: migrate(vault.loadVault(result.user.id, result.dek)) });
+  } else {
+    result.dek.fill(0);
+  }
+  startSession(res, result.user.id);
+  res.json({ ok: true, username: result.user.username });
 }));
 
 app.post('/api/auth/logout', (req, res) => {
-  sessions.delete(getToken(req));
+  const token = getToken(req);
+  const s = sessions.get(token);
+  sessions.delete(token);
   res.clearCookie(COOKIE, { path: '/' });
-  if (!sessions.size) lock();
+  if (s && ![...sessions.values()].some((x) => x.userId === s.userId)) lockUser(s.userId);
   res.json({ ok: true });
 });
 
 app.post('/api/auth/change-password', requireAuth, asyncRoute(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   const check = await vault.unlock(state.username, String(currentPassword || ''));
-  if (!check) return res.status(400).json({ error: 'Current password is incorrect' });
-  check.fill(0);
+  if (!check || check.user.id !== state.userId) return res.status(400).json({ error: 'Current password is incorrect' });
+  check.dek.fill(0);
   const err = validCredentials(state.username, newPassword);
   if (err) return res.status(400).json({ error: err });
-  await vault.changePassword(state.dek, state.username, newPassword);
+  await vault.changePassword(state.userId, state.dek, newPassword);
   res.json({ ok: true });
 }));
 
@@ -276,7 +343,7 @@ app.delete('/api/accounts/:id', (req, res) => {
   const id = req.params.id;
   state.data.accounts = state.data.accounts.filter((a) => a.id !== id);
   state.data.transactions = state.data.transactions.filter((t) => t.accountId !== id);
-  for (const imp of state.data.imports) if (imp.accountId === id) vault.deleteFile(imp.id);
+  for (const imp of state.data.imports) if (imp.accountId === id) vault.deleteFile(state.userId, imp.id);
   state.data.imports = state.data.imports.filter((i) => i.accountId !== id);
   persist();
   res.json({ ok: true });
@@ -351,7 +418,7 @@ const PENDING_MS = 30 * 60 * 1000;
 function holdUpload(file) {
   for (const [id, p] of pendingUploads) if (Date.now() - p.at > PENDING_MS) pendingUploads.delete(id);
   const id = crypto.randomUUID();
-  pendingUploads.set(id, { buffer: file.buffer, name: file.originalname, type: file.mimetype || 'application/octet-stream', at: Date.now() });
+  pendingUploads.set(id, { userId: state.userId, buffer: file.buffer, name: file.originalname, type: file.mimetype || 'application/octet-stream', at: Date.now() });
   return id;
 }
 
@@ -392,7 +459,7 @@ function previewPayload(parsed, acct, fileName, uploadId) {
     };
 }
 
-app.post('/api/import/preview', upload.single('file'), asyncRoute(async (req, res) => {
+app.post('/api/import/preview', upload.single('file'), withUser(asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const acct = state.data.accounts.find((a) => a.id === req.body.accountId);
   try {
@@ -401,11 +468,11 @@ app.post('/api/import/preview', upload.single('file'), asyncRoute(async (req, re
   } catch (e) {
     res.status(e.code === 'NEEDS_OCR' ? 422 : 400).json({ error: e.message || 'Could not read this file', code: e.code });
   }
-}));
+})));
 
 // Text read by OCR in the browser (photos, scanned PDFs). The original file comes along
 // only so an encrypted copy can be kept; it is never written to disk unencrypted.
-app.post('/api/import/preview-text', upload.single('file'), asyncRoute(async (req, res) => {
+app.post('/api/import/preview-text', upload.single('file'), withUser(asyncRoute(async (req, res) => {
   const acct = state.data.accounts.find((a) => a.id === req.body.accountId);
   let lines;
   try { lines = JSON.parse(req.body.lines || '[]'); } catch { lines = null; }
@@ -415,7 +482,7 @@ app.post('/api/import/preview-text', upload.single('file'), asyncRoute(async (re
   parsed.flip = false;
   const fileName = String(req.body.fileName || req.file?.originalname || 'scanned statement').slice(0, 200);
   res.json(previewPayload(parsed, acct, fileName, req.file ? holdUpload(req.file) : null));
-}));
+})));
 
 app.post('/api/import/commit', (req, res) => {
   const { accountId, fileName, rows, statement, uploadId, keepFile } = req.body || {};
@@ -445,10 +512,10 @@ app.post('/api/import/commit', (req, res) => {
   }
   // Optionally keep the original statement, encrypted with the vault key.
   let file = null;
-  const pending = uploadId && pendingUploads.get(uploadId);
+  const pending = uploadId && pendingUploads.get(uploadId)?.userId === state.userId ? pendingUploads.get(uploadId) : null;
   if (pending) {
     if (keepFile) {
-      vault.saveFile(state.dek, importId, pending.buffer);
+      vault.saveFile(state.userId, state.dek, importId, pending.buffer);
       file = { name: pending.name, type: pending.type, size: pending.buffer.length };
     }
     pendingUploads.delete(uploadId);
@@ -464,7 +531,7 @@ app.post('/api/import/commit', (req, res) => {
 app.get('/api/imports/:id/file', (req, res) => {
   const imp = state.data.imports.find((i) => i.id === req.params.id);
   if (!imp?.file) return res.status(404).json({ error: 'No saved copy of this statement' });
-  const buf = vault.readFile(state.dek, imp.id);
+  const buf = vault.readFile(state.userId, state.dek, imp.id);
   const safeName = imp.file.name.replace(/[^\w.\- ()]/g, '_');
   res.set('Content-Type', imp.file.type || 'application/octet-stream');
   res.set('Content-Disposition', `attachment; filename="${safeName}"`);
@@ -472,7 +539,7 @@ app.get('/api/imports/:id/file', (req, res) => {
 });
 
 app.delete('/api/imports/:id', (req, res) => {
-  vault.deleteFile(req.params.id);
+  vault.deleteFile(state.userId, req.params.id);
   state.data.transactions = state.data.transactions.filter((t) => t.importId !== req.params.id);
   state.data.imports = state.data.imports.filter((i) => i.id !== req.params.id);
   persist();
@@ -612,17 +679,71 @@ app.put('/api/settings', (req, res) => {
   res.json(next);
 });
 
+// ------------------------------------------------------------ household ---
+// Multi-user ("household") mode is off by default. Each member has their own vault,
+// encrypted with their own password; the admin cannot read anyone else's data.
+function householdInfo() {
+  const opts = vault.serverOptions();
+  const scheme = TLS ? 'https' : 'http';
+  return {
+    ...opts,
+    lanActive: LAN_ACTIVE,
+    https: !!TLS,
+    restartNeeded: opts.lanAccess !== LAN_ACTIVE && !process.env.VAULTBOOK_HOST,
+    addresses: LAN_ACTIVE ? lanAddresses().map((ip) => `${scheme}://${ip}:${PORT}`) : [],
+    users: vault.listUsers(),
+    you: state.userId,
+  };
+}
+
+app.get('/api/admin/household', requireAdmin, (req, res) => res.json(householdInfo()));
+
+app.put('/api/admin/household', requireAdmin, (req, res) => {
+  const { multiUser, lanAccess } = req.body || {};
+  vault.setServerOptions({ multiUser, lanAccess });
+  // Turning household mode off signs everyone but admins out.
+  if (multiUser === false) {
+    const admins = new Set(vault.listUsers().filter((u) => u.role === 'admin').map((u) => u.id));
+    for (const id of [...unlocked.keys()]) if (!admins.has(id)) lockUser(id);
+  }
+  res.json(householdInfo());
+});
+
+app.post('/api/admin/users', requireAdmin, asyncRoute(async (req, res) => {
+  if (!vault.serverOptions().multiUser) return res.status(400).json({ error: 'Turn on household mode first' });
+  const { username, password, role } = req.body || {};
+  const err = validCredentials(username, password);
+  if (err) return res.status(400).json({ error: err });
+  try {
+    const { dek } = await vault.createUser(username, password, role === 'admin' ? 'admin' : 'member', freshData());
+    dek.fill(0); // the new member unlocks their own vault when they sign in
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  res.json(householdInfo());
+}));
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const id = req.params.id;
+  if (id === state.userId) return res.status(400).json({ error: 'You can’t remove yourself' });
+  if (!vault.listUsers().some((u) => u.id === id)) return res.status(404).json({ error: 'No such user' });
+  lockUser(id);
+  vault.deleteUser(id);
+  res.json(householdInfo());
+});
+
 // --------------------------------------------------------------- export ---
 app.get('/api/backup', (req, res) => {
   const stamp = localToday();
   res.set('Content-Disposition', `attachment; filename="vaultbook-backup-${stamp}.json"`);
   res.json({
     format: 'vaultbook-encrypted-backup',
-    note: 'Encrypted. Restore by placing auth.json and vault.enc in the data folder. Requires your password.',
-    auth: JSON.parse(fs.readFileSync(path.join(vault.DATA_DIR, 'auth.json'), 'utf8')),
-    vault: vault.vaultBytes().toString('base64'),
+    note: 'Encrypted with your password. Contains your login record (wrapped key), your vault and your statement copies.',
+    username: state.username,
+    auth: vault.authRecord(state.userId),
+    vault: vault.vaultBytes(state.userId).toString('base64'),
     // Saved statement copies, still encrypted (restore into data/files/<id>.enc).
-    files: Object.fromEntries(state.data.imports.filter((i) => i.file).map((i) => [i.id, vault.fileBytes(i.id)?.toString('base64')]).filter(([, b]) => b)),
+    files: Object.fromEntries(state.data.imports.filter((i) => i.file).map((i) => [i.id, vault.fileBytes(state.userId, i.id)?.toString('base64')]).filter(([, b]) => b)),
   });
 });
 
@@ -652,6 +773,12 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Server error' });
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Vault Book listening on http://${HOST}:${PORT}${PROD ? ' (serving app)' : ''}`);
+const server = TLS ? https.createServer(TLS, app) : http.createServer(app);
+server.listen(PORT, HOST, () => {
+  const scheme = TLS ? 'https' : 'http';
+  console.log(`Vault Book listening on ${scheme}://${HOST}:${PORT}${PROD ? ' (serving app)' : ''}`);
+  if (LAN_ACTIVE) {
+    console.log(`Home-network access is ON: ${lanAddresses().map((ip) => `${scheme}://${ip}:${PORT}`).join(', ')}`);
+    if (!TLS) console.log('Warning: traffic on your network is not encrypted. Set VAULTBOOK_TLS_CERT and VAULTBOOK_TLS_KEY to use HTTPS.');
+  }
 });

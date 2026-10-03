@@ -24,6 +24,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 - [Quick start](#quick-start)
 - [Using Vault Book](#using-vault-book)
 - [Security & privacy](#security--privacy)
+- [Household mode & home-network access](#household-mode--home-network-access)
 - [Supported statement formats](#supported-statement-formats)
 - [Development](#development)
 - [Project structure](#project-structure)
@@ -46,6 +47,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 | **Budget** | Monthly budgets per category, each marked **Need** or **Want**. One click suggests amounts from your 3-month averages, and spending is compared with the 50/30/20 guideline. |
 | **Debt payoff plan** | **Avalanche** (highest APR first) vs. **Snowball** (smallest balance first). Shows your debt-free date, total interest, interest saved vs. paying only minimums, a month-by-month payment schedule (pick any month to see exactly what to pay on each card), and "speed it up" scenarios. |
 | **Payoff theory** | A sandbox under *Debt payoff plan* for "what if" ideas: add **bonuses** (one-time or repeating monthly, quarterly, twice a year or yearly, with the % you’ll put toward debt), **raises** starting any month (e.g. a mid-year promotion), one-time **lump sums**, **monthly increases**, and **investment withdrawals** (after the account’s tax & penalties), each aimed at a specific debt or the focus debt. An *Investment impact* view weighs the interest saved against the investment growth given up, change the monthly payment or strategy, and compare against your main plan: debt-free date, interest saved, per-card payoff dates and a month-by-month schedule. Keep as many theories as you like, side by side as tabs. Each one saves automatically to your encrypted vault as you edit, and can be renamed, duplicated, reset or deleted. **Apply** the best one to your main plan. **Planning only: Vault Book never makes payments.** |
+| **Household mode** | Optional (off by default) multi-user mode for families: each member has their own vault, encrypted with their own password. Optional home-network access (also off by default). |
 | **Appearance** | Modern responsive UI with Light, Dark, and Auto (follows your OS) themes. |
 
 ## Requirements
@@ -108,7 +110,8 @@ Vault Book is designed so that your financial data never leaves your computer an
 | **Encryption at rest** | All data lives in one file, `data/vault.enc`, encrypted with **AES-256-GCM**. |
 | **Password-derived key** | A random data key is wrapped with a key derived from your password using **scrypt** (N=2¹⁷, r=8, p=1). Only the wrapped key is stored, in `data/auth.json`. |
 | **Key only in memory** | The decrypted key exists only in server memory while you're signed in. It's wiped on sign-out, after 30 minutes idle, or after 12 hours at most. |
-| **Local only** | The server binds to `127.0.0.1`, so it's unreachable from other devices. Requests addressed to other hostnames are rejected (DNS-rebinding protection). |
+| **Local only (by default)** | The server binds to `127.0.0.1`, so it's unreachable from other devices unless the admin turns on home-network access. Requests addressed to unknown host names are always rejected (DNS-rebinding protection). |
+| **Separate vaults per person** | In household mode every member has their own data key, wrapped with their own password. No one, including the admin, can open another member's vault. |
 | **Uploads** | Statements are parsed in memory. OCR runs in your browser. Nothing is written to disk unencrypted. |
 | **Statement copies** | Optionally keep the original file of each import, encrypted (AES-256-GCM) with your vault key in `data/files/`. Only your password can open them; if it's forgotten, they're unrecoverable. Undoing an import deletes its copy. |
 | **Web hardening** | httpOnly + SameSite=Strict session cookies, a CSRF header on every change, login lockout after repeated failures, and a strict Content-Security-Policy (via [helmet](https://helmetjs.github.io/)). |
@@ -117,6 +120,32 @@ See [SECURITY.md](SECURITY.md) for the threat model and its limits.
 
 > [!CAUTION]
 > Never commit the `data/` folder or a backup file. Both are excluded in `.gitignore` by default.
+
+## Household mode & home-network access
+
+Both are **off by default**. Vault Book starts as a single-user app that only works on the computer it runs on.
+
+**Household mode** (Settings → Household, admin only):
+
+1. Turn on **Enable household mode**.
+2. Click **Add member** and set a username and starting password for each person. Share the password in person; they can change it in Settings.
+3. Each member signs in on the same login screen and gets their **own private vault**, encrypted with **their own password**. The admin can add and remove members but **cannot see anyone else's data**.
+4. Passwords can't be reset by anyone. If a member forgets theirs, remove them and add them again (their old data is lost).
+
+Turning household mode off signs other members out. Their data is kept until you turn it back on or remove them.
+
+**Home-network access** (Settings → Household → *Allow access from other devices on my home network*):
+
+1. Turn it on, then **restart Vault Book**.
+2. Settings shows the addresses to open on a phone or laptop on the same network, such as `http://192.168.1.20:4310`.
+3. Your firewall may ask about Vault Book. Allow **private networks only**.
+4. Only use this on a network you trust, never on public Wi-Fi.
+
+> [!WARNING]
+> Over plain HTTP, traffic between devices on your network isn't encrypted (your stored data still is). For better protection, run Vault Book with HTTPS:
+> 1. Create a certificate for your computer's address, for example with [mkcert](https://github.com/FiloSottile/mkcert): `mkcert 192.168.1.20 my-pc.local`
+> 2. Start Vault Book with `VAULTBOOK_TLS_CERT` and `VAULTBOOK_TLS_KEY` pointing to the two files.
+> 3. Install mkcert's root certificate on each device that will connect.
 
 ## Supported statement formats
 
@@ -153,7 +182,10 @@ npm start          # serve the built app → http://localhost:4310
 | Variable | Default | Purpose |
 |---|---|---|
 | `VAULTBOOK_PORT` | `4310` | API / app port |
-| `VAULTBOOK_DATA_DIR` | `./data` | Where the encrypted vault is stored |
+| `VAULTBOOK_DATA_DIR` | `./data` | Where the encrypted vaults are stored |
+| `VAULTBOOK_HOST` | `127.0.0.1` | Address to listen on (overrides the home-network setting) |
+| `VAULTBOOK_ALLOWED_HOSTS` | | Extra host names allowed to reach the app, comma-separated |
+| `VAULTBOOK_TLS_CERT` / `VAULTBOOK_TLS_KEY` | | Certificate and key files to serve over HTTPS |
 
 **Tech stack:** React 19, React Router, Recharts, Lucide icons, Vite · Node.js, Express 5, helmet, multer, PapaParse, pdf.js.
 
@@ -172,14 +204,14 @@ npm start          # serve the built app → http://localhost:4310
 │   ├── categorize.js       Default categories, keyword rules, merchant normalization
 │   └── parsers/            CSV, OFX/QFX, and PDF statement parsers
 ├── samples/                Fake sample statements and demo seed script
-├── data/                   Your encrypted vault (git-ignored, created on first run)
+├── data/                   Your encrypted vaults (git-ignored): users.json, vaults/, files/
 └── Start Vault Book.bat        One-click launcher for Windows
 ```
 
 ## Backup & restore
 
 - **Encrypted backup:** *Settings → Download encrypted backup*. This gives you a JSON file containing your encrypted vault and wrapped key. You still need your password to use it.
-- **Restore:** stop Vault Book. From the backup file, write the `auth` object to `data/auth.json` and base64-decode `vault` into `data/vault.enc`. Then start Vault Book and sign in.
+- **Restore:** stop Vault Book. Put the backup's `auth` record (with your user id and role) into `data/users.json`, base64-decode `vault` into `data/vaults/<your user id>.enc`, and each entry in `files` into `data/files/<your user id>/<id>.enc`. Then start Vault Book and sign in.
 - **CSV export:** *Transactions → Export CSV*. This file is **not encrypted**, so store it carefully.
 
 ## Troubleshooting

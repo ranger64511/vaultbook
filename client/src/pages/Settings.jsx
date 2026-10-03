@@ -4,8 +4,9 @@ import { api } from '../api.js';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, CategorySelect } from '../components/ui.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
+import Household from '../components/Household.jsx';
 
-export default function Settings() {
+export default function Settings({ role }) {
   const { data, mutate, notify, categoriesById } = useData();
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState(null);
@@ -69,6 +70,8 @@ export default function Settings() {
           </Card>
         </div>
       </div>
+
+      {role === 'admin' && <Household />}
 
       <Card className="mt" title="Categorization rules" subtitle="Your rules run before the built-in ones. Patterns are case-insensitive and can use | for “or” (e.g. netflix|hulu)."
         action={<button className="btn sm" onClick={async () => { const r = await mutate('/recategorize', { method: 'POST' }); notify(`${r.changed} transactions re-categorized`); }}><RefreshCw size={14} /> Re-run on all</button>}>

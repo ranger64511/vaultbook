@@ -8,7 +8,8 @@ Vault Book is provided **as is, without support**. There is no security response
 |---|---|
 | Someone copies your `data/` folder or a backup | The vault is AES-256-GCM encrypted. The key is wrapped with scrypt (N=2¹⁷) from your password. Without the password the data is unreadable. |
 | Tampering with the vault file | GCM authentication detects any modification. A tampered vault fails to open. |
-| Other devices on your network | The server listens only on `127.0.0.1`. |
+| Other devices on your network | By default the server listens only on `127.0.0.1`. Home-network access is opt-in, admin-only, needs a restart, and still requires each person's own login. |
+| Household members reading each other's data | Each member's vault and statement copies are encrypted with their own key, unlocked only by their own password. |
 | Malicious websites in your browser | SameSite=Strict cookies, a required CSRF header, Host-header allow-list (DNS rebinding), strict CSP, and `frame-ancestors 'none'`. |
 | Password guessing | Expensive scrypt per attempt plus exponential lockout after 5 failures. |
 | Leftover plaintext | Uploaded statements are parsed in memory only (OCR runs in the browser). Kept statement copies are encrypted with the vault key. The decrypted key is held in memory only while signed in. |
@@ -19,7 +20,9 @@ Vault Book is provided **as is, without support**. There is no security response
 - **A weak password.** Encryption is only as strong as your password. Use a long passphrase.
 - **The plaintext CSV export.** *Export CSV* writes unencrypted data. Delete it when you're done.
 - **Forgotten passwords.** There is no recovery by design.
-- **Exposing the server to a network.** Don't change the bind address or put Vault Book behind a public proxy. It isn't designed or tested for that.
+- **Traffic on your home network without HTTPS.** With home-network access on and no certificate, data moving between devices isn't encrypted. Use HTTPS (see the README) and only trusted networks.
+- **Exposing the server to the internet.** Never port-forward Vault Book or put it behind a public proxy. It isn't designed or tested for that.
+- **A household admin with access to the computer.** They can't decrypt your vault, but they can delete it or remove your account.
 
 ## Good practice
 
