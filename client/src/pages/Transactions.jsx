@@ -55,7 +55,13 @@ export default function Transactions() {
   const [account, setAccount] = useState('');
   const [category, setCategory] = useState('');
   const [view, setViewState] = useState(readView);
-  const [anchor, setAnchor] = useState(today);
+  const [anchor, setAnchor] = useState(() => {
+    const latestDate = data.transactions.reduce((m, t) => (t.date > m ? t.date : m), '');
+    const v = readView();
+    const r = periodRange(v, today);
+    const todayHasActivity = !r || data.transactions.some((t) => t.date >= r[0] && t.date <= r[1]);
+    return todayHasActivity || !latestDate ? today : latestDate;
+  });
   const [limit, setLimit] = useState(PAGE);
   const [adding, setAdding] = useState(false);
   const [ruleAsk, setRuleAsk] = useState(null);
@@ -96,13 +102,14 @@ export default function Transactions() {
   const filtersOn = !!(q.trim() || account || category);
 
   // Months that have transactions, plus the current month, newest first.
-  const months = useMemo(
-    () => [...new Set([today.slice(0, 7), ...data.transactions.map((t) => t.date.slice(0, 7))])].sort().reverse(),
-    [data.transactions, today],
-  );
-  // Jump to a month: today if it's the current month, otherwise its 1st (Week view lands on that month's first week).
-  const pickMonth = (m) => setAnchor(m === today.slice(0, 7) ? today : `${m}-01`);
-
+  const monthCounts = useMemo(() => {
+    const m = new Map();
+    for (const t of matching) m.set(t.date.slice(0, 7), (m.get(t.date.slice(0, 7)) || 0) + 1);
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [matching]);
+  const latestDate = matching[0]?.date;
+  // Jump to a month: Month view shows the whole month; Day/Week land on its latest activity.
+  const goToMonth = (m) => setAnchor(view === 'month' ? `${m}-01` : (matching.find((t) => t.date.startsWith(m))?.date || `${m}-01`));
   const groups = useMemo(() => {
     const out = [];
     const keyFn = { month: (t) => t.date.slice(0, 7), week: (t) => weekKey(t.date), day: (t) => t.date }[group] || (() => 'all');
@@ -156,19 +163,32 @@ export default function Transactions() {
         {view !== 'all' && (
           <div className="spread period-bar">
             <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-              <button className="btn icon sm" aria-label={`Previous ${view}`} title={`Previous ${view}`} onClick={() => setAnchor((a) => shiftPeriod(view, a, -1))}><ChevronLeft size={16} /></button>
-              <button className="btn icon sm" aria-label={`Next ${view}`} title={`Next ${view}`} disabled={isCurrent} onClick={() => setAnchor((a) => shiftPeriod(view, a, 1))}><ChevronRight size={16} /></button>
+              {/* Arrows skip straight to the previous / next period that has transactions. */}
+              <button className="btn icon sm" aria-label={`Previous ${view} with transactions`} title={earlier ? `Previous ${view} with transactions` : 'Nothing earlier'}
+                disabled={!earlier} onClick={() => setAnchor(earlier)}><ChevronLeft size={16} /></button>
+              <button className="btn icon sm" aria-label={`Next ${view} with transactions`} title={later ? `Next ${view} with transactions` : 'Nothing later'}
+                disabled={!later} onClick={() => setAnchor(later)}><ChevronRight size={16} /></button>
               <h2 style={{ marginLeft: 6 }}>{periodTitle(view, anchor, today)}</h2>
-              {!isCurrent && <button className="btn ghost sm" onClick={() => setAnchor(today)}>Today</button>}
+              {latestDate && periodRange(view, latestDate)[0] !== range[0] && <button className="btn ghost sm" onClick={() => setAnchor(latestDate)}>Latest</button>}
             </div>
-            <select className="period-month" value={anchor.slice(0, 7)} onChange={(e) => pickMonth(e.target.value)} aria-label="Jump to month">
-              {!months.includes(anchor.slice(0, 7)) && <option value={anchor.slice(0, 7)}>{monthLabel(anchor.slice(0, 7), 'long')}</option>}
-              {months.map((m) => <option key={m} value={m}>{monthLabel(m, 'long')}</option>)}
-            </select>
             <div className="num" style={{ fontSize: 13 }}>
               <span className="pos">+{money(periodTotals.in)}</span><span className="faint"> in · </span>
               <span>−{money(periodTotals.out)}</span><span className="faint"> out</span>
             </div>
+          </div>
+        )}
+
+        {monthCounts.length > 1 && (
+          <div className="month-strip" role="navigation" aria-label="Months with transactions">
+            {monthCounts.map(([m, n]) => {
+              const active = view === 'all' ? false : (range && m >= range[0].slice(0, 7) && m <= range[1].slice(0, 7));
+              return (
+                <button key={m} className={`month-chip${active ? ' active' : ''}`} aria-pressed={!!active}
+                  onClick={() => { if (view === 'all') setView('month'); goToMonth(m); }}>
+                  {monthLabel(m, 'short')} <span className="faint">· {n}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 

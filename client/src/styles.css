@@ -287,3 +287,7 @@ tr.dim-soft td { opacity: 0.6; }
 .legend .cov-dot { margin-right: 6px; }
 .link-btn { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
+.month-strip { display: flex; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: thin; }
+.month-chip { flex: none; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; }
+.month-chip:hover { background: var(--surface-hover); color: var(--text); }
+.month-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
