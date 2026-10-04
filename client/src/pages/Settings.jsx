@@ -40,7 +40,7 @@ export default function Settings({ role }) {
           <div className="stack" style={{ gap: 10, fontSize: 13.5 }}>
             <p className="row" style={{ gap: 8, flexWrap: 'nowrap', alignItems: 'flex-start' }}><ShieldCheck size={16} className="pos" style={{ flex: 'none', marginTop: 2 }} /> All data is encrypted on disk with AES-256-GCM. The key is derived from your password (scrypt) and only kept in memory while you’re signed in.</p>
             <p className="row" style={{ gap: 8, flexWrap: 'nowrap', alignItems: 'flex-start' }}><ShieldCheck size={16} className="pos" style={{ flex: 'none', marginTop: 2 }} /> By default the server only listens on this computer (127.0.0.1); home-network access is opt-in under Household. Your vault locks automatically after 30 minutes of inactivity.</p>
-            <p className="row" style={{ gap: 8, flexWrap: 'nowrap', alignItems: 'flex-start' }}><ShieldCheck size={16} className="pos" style={{ flex: 'none', marginTop: 2 }} /> Uploaded statements are parsed in memory and never written to disk.</p>
+            <p className="row" style={{ gap: 8, flexWrap: 'nowrap', alignItems: 'flex-start' }}><ShieldCheck size={16} className="pos" style={{ flex: 'none', marginTop: 2 }} /> Uploaded statements are parsed in memory and never written to disk unencrypted. If you keep a copy, it’s encrypted with your key.</p>
           </div>
           <form className="stack mt" style={{ gap: 12 }} onSubmit={changePassword}>
             <h3 className="row" style={{ gap: 8 }}><KeyRound size={16} /> Change password</h3>

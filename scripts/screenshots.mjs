@@ -1,0 +1,97 @@
+// Captures README screenshots of every page from a running DEMO instance.
+//
+//   1. npm run dev:demo            (and `node samples/seed-demo.js` the first time)
+//   2. npm run screenshots         (or: SCREENSHOT_URL=http://localhost:5173 node scripts/screenshots.mjs)
+//
+// Uses an installed Edge or Chrome via puppeteer-core (no browser download) and the
+// demo login from samples/DEMO_LOGIN.md. Only ever point this at the demo: the images
+// are committed to the public repo.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import puppeteer from 'puppeteer-core';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const OUT = path.join(ROOT, 'docs', 'screenshots');
+const BASE = (process.env.SCREENSHOT_URL || 'http://localhost:5173').replace(/\/$/, '');
+const creds = fs.readFileSync(path.join(ROOT, 'samples', 'DEMO_LOGIN.md'), 'utf8');
+const username = creds.match(/Username: `([^`]+)`/)[1];
+const password = creds.match(/Password: `([^`]+)`/)[1];
+
+const BROWSERS = [
+  process.env.BROWSER_PATH,
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+].filter(Boolean);
+const executablePath = BROWSERS.find((p) => fs.existsSync(p));
+if (!executablePath) throw new Error('No Edge or Chrome found. Set BROWSER_PATH to a Chromium-based browser.');
+
+// name, path, optional setup in the page, how tall to capture, and an optional month
+// chip to click first (1 = the second chip, i.e. the last full month, which reads
+// better in screenshots than a month that has only just started).
+const PAGES = [
+  { name: 'dashboard', path: '/', height: 1500, chip: 1 },
+  { name: 'transactions', path: '/transactions', height: 1000, chip: 1, setup: () => localStorage.setItem('tx-view', 'month') },
+  { name: 'import', path: '/import', height: 1250 },
+  { name: 'accounts', path: '/accounts', height: 1550, chip: 1 },
+  { name: 'recurring', path: '/recurring', height: 1250 },
+  { name: 'budget', path: '/budget', height: 1250, chip: 1 },
+  { name: 'payoff', path: '/payoff', height: 1350 },
+  { name: 'payoff-theory', path: '/payoff/theory', height: 1450 },
+  { name: 'settings', path: '/settings', height: 1150 },
+];
+const WIDTH = 1440;
+const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function shoot(page, file, height) {
+  await page.setViewport({ width: WIDTH, height, deviceScaleFactor: 1 });
+  await settle(1600); // let charts finish animating
+  await page.screenshot({ path: path.join(OUT, file), type: 'webp', quality: 82 });
+  console.log(`  ${file}`);
+}
+
+fs.mkdirSync(OUT, { recursive: true });
+const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-first-run', '--hide-scrollbars'] });
+try {
+  const page = await browser.newPage();
+  await page.setViewport({ width: WIDTH, height: 900 });
+
+  for (const theme of ['light', 'dark']) {
+    console.log(`${theme}:`);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle0' });
+    await page.evaluate((t) => localStorage.setItem('color-scheme', t), theme);
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: theme }]);
+
+    // Login screen (signed out).
+    await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'vaultbook' } }));
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('#u');
+    if (theme === 'light') await shoot(page, 'login.webp', 760);
+    await page.type('#u', username);
+    await page.type('#p', password);
+    await Promise.all([page.keyboard.press('Enter'), page.waitForSelector('.sidebar', { timeout: 15000 })]);
+
+    for (const p of PAGES) {
+      if (theme === 'dark' && p.name !== 'dashboard' && p.name !== 'payoff-theory') continue; // a couple of dark examples
+      if (p.setup) await page.evaluate(p.setup);
+      await page.goto(`${BASE}${p.path}`, { waitUntil: 'networkidle0' });
+      await page.waitForSelector('.page-head');
+      if (p.chip != null) {
+        await page.evaluate((i) => document.querySelectorAll('.month-chip')[i]?.click(), p.chip);
+        await page.evaluate(() => window.scrollTo(0, 0));
+      }
+      await shoot(page, `${p.name}${theme === 'dark' ? '-dark' : ''}.webp`, p.height);
+    }
+  }
+  await page.evaluate(() => {
+    localStorage.removeItem('color-scheme');
+    return fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'vaultbook' } });
+  });
+} finally {
+  await browser.close();
+}
+console.log(`Saved to ${path.relative(ROOT, OUT)}`);

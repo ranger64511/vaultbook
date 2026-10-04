@@ -20,6 +20,7 @@ Import your bank and credit card statements and Vault Book will break out every 
 ## Contents
 
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Using Vault Book](#using-vault-book)
@@ -50,6 +51,65 @@ Import your bank and credit card statements and Vault Book will break out every 
 | **Household mode** | Optional (off by default) multi-user mode for families: each member has their own vault, encrypted with their own password. Optional home-network access (also off by default). |
 | **Months, worked out for you** | No month pickers: every page works out its months from your data and shows them as chips with a total or count (spending, activity, recurring bills, plan years), opening on the current month if it has activity, otherwise your latest. |
 | **Appearance** | Modern responsive UI with Light, Dark, and Auto (follows your OS) themes. |
+
+## Screenshots
+
+All screenshots use the fictional demo data (see [Try it with demo data](#try-it-with-demo-data)).
+
+### Dashboard
+Net worth (what you have vs. what you owe), monthly spending and income, debt-free date, budget status, upcoming bills, charts, debts, and recent activity.
+
+<img src="docs/screenshots/dashboard.webp" alt="Dashboard" width="900">
+
+### Transactions
+View by day, week, or month. Months are worked out from your data and shown as chips. Re-categorize anything inline.
+
+<img src="docs/screenshots/transactions.webp" alt="Transactions" width="900">
+
+### Import statements
+CSV, OFX/QFX, PDF, or a photo/scan (OCR). The coverage timeline shows each account's months, gaps, and what to import next.
+
+<img src="docs/screenshots/import.webp" alt="Import statements" width="900">
+
+### Accounts
+Bank & cash, investments, property & assets (with equity against linked loans), credit cards, and loans, plus account activity by month.
+
+<img src="docs/screenshots/accounts.webp" alt="Accounts" width="900">
+
+### Recurring charges
+Subscriptions and bills found automatically. Plan which to cancel (you cancel them yourself) and see the savings month by month.
+
+<img src="docs/screenshots/recurring.webp" alt="Recurring charges" width="900">
+
+### Budget
+Monthly budgets by category (needs vs. wants), progress bars, 3-month averages, and the 50/30/20 check.
+
+<img src="docs/screenshots/budget.webp" alt="Budget" width="900">
+
+### Debt payoff plan
+Avalanche or snowball, debt-free date, interest saved, balance charts, payoff order, and "speed it up" ideas.
+
+<img src="docs/screenshots/payoff.webp" alt="Debt payoff plan" width="900">
+
+### Payoff theory
+Try what-ifs (bonuses, raises, lump sums, investment withdrawals) as autosaved theories, compare with your main plan, and apply the best one.
+
+<img src="docs/screenshots/payoff-theory.webp" alt="Payoff theory" width="900">
+
+### Settings
+Security, appearance, monthly expected income, encrypted backup, household mode, and categorization rules.
+
+<img src="docs/screenshots/settings.webp" alt="Settings" width="900">
+
+### Dark mode
+
+<img src="docs/screenshots/dashboard-dark.webp" alt="Dashboard in dark mode" width="445"> <img src="docs/screenshots/payoff-theory-dark.webp" alt="Payoff theory in dark mode" width="445">
+
+### Sign in
+
+<img src="docs/screenshots/login.webp" alt="Sign-in screen" width="600">
+
+> To refresh these after changes, run the demo (`npm run dev:demo`) and then `npm run screenshots`.
 
 ## Requirements
 
@@ -177,6 +237,7 @@ npm start          # serve the built app → http://localhost:4310
 | `npm run dev:demo` | Development mode using the separate `data-demo/` sandbox |
 | `npm run samples` | Regenerate the fake sample CSV files |
 | `npm test` | Run the test suite with Node's built-in test runner |
+| `npm run screenshots` | Regenerate the README screenshots from the running demo (uses an installed Edge or Chrome) |
 
 **Environment variables (optional):**
 

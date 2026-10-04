@@ -124,7 +124,7 @@ export default function Payoff() {
               {adjustments.map((a) => (
                 <div key={a.id} className="row" style={{ gap: 8 }}>
                   <span className={`badge ${a.type === 'lump' ? 'income' : 'need'}`}>{a.type === 'lump' ? 'Lump sum' : 'Monthly increase'}</span>
-                  <span>{describeAdjustment(a, cardName, data.accounts)}</span>
+                  <span>{describeAdjustment(a, cardName, data.accounts).replace(/^[^:]+:s*/, '')}</span>
                   <button className="btn ghost icon sm" aria-label="Remove from main plan" title="Remove from main plan" onClick={() => removeAdjustment(a.id)}><X size={14} /></button>
                 </div>
               ))}
@@ -205,7 +205,7 @@ export default function Payoff() {
               <div style={{ fontWeight: 550, fontSize: 13.5 }}>{b.label}</div>
               <div className="faint">
                 Debt-free {Number.isFinite(b.sim.months) ? monthsFromNow(b.sim.months) : '—'}
-                {Number.isFinite(plan.months) && Number.isFinite(b.sim.months) && <> · <span className="pos">{plan.months - b.sim.months} months sooner</span></>}
+                {Number.isFinite(plan.months) && Number.isFinite(b.sim.months) && <> · <span className="pos">{plan.months - b.sim.months} month{plan.months - b.sim.months === 1 ? '' : 's'} sooner</span></>}
                 {' · '}saves <span className="pos">{money0(plan.totalInterest - b.sim.totalInterest)}</span> interest
               </div>
             </div>

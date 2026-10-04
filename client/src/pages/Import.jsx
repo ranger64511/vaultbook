@@ -114,7 +114,7 @@ export default function Import() {
 
   return (
     <>
-      <PageHead title="Import statements" subtitle="CSV, OFX/QFX or PDF from your bank or card issuer. Files are read in memory and never saved unencrypted." />
+      <PageHead title="Import statements" subtitle="CSV, OFX/QFX, PDF, or a photo or scan of a statement. Files are read in memory and never saved unencrypted." />
 
       {!preview && (
         <div className="grid g-3-1">

@@ -22,7 +22,8 @@
     "build": "vite build",
     "start": "node server/index.js --prod",
     "samples": "node samples/generate.js",
-    "test": "node --test server/categorize.test.js server/parsers.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js client/src/lib/payoff.test.js"
+    "test": "node --test server/categorize.test.js server/parsers.test.js client/src/lib/analytics.test.js client/src/lib/accounts.test.js client/src/lib/payoff.test.js",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
@@ -38,6 +39,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
     "lucide-react": "^1.51.0",
+    "puppeteer-core": "^25.12.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",
