@@ -81,6 +81,10 @@ Subscriptions and bills found automatically. Plan which to cancel (you cancel th
 
 <img src="docs/screenshots/recurring.webp" alt="Recurring charges" width="900">
 
+**Plan to cancel** opens a popup that makes clear Vault Book doesn't cancel anything. You pick the month you expect to have cancelled it by, then cancel it yourself with the company:
+
+<img src="docs/screenshots/recurring-plan-cancel.webp" alt="Recurring charges: plan to cancel popup" width="900">
+
 ### Budget
 Monthly budgets by category (needs vs. wants), progress bars, 3-month averages, and the 50/30/20 check.
 

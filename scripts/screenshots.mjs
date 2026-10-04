@@ -39,6 +39,8 @@ const PAGES = [
   { name: 'import', path: '/import', height: 1250 },
   { name: 'accounts', path: '/accounts', height: 1550, chip: 1 },
   { name: 'recurring', path: '/recurring', height: 1250 },
+  // "Plan to cancel" popup for the first charge to review; closed with Escape, nothing is planned.
+  { name: 'recurring-plan-cancel', path: '/recurring', height: 900, openText: 'Plan to cancel' },
   { name: 'budget', path: '/budget', height: 1250, chip: 1 },
   { name: 'payoff', path: '/payoff', height: 1350 },
   { name: 'payoff-theory', path: '/payoff/theory', height: 1450 },
