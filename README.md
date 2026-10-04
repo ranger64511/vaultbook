@@ -164,7 +164,7 @@ Turning household mode off signs other members out. Their data is kept until you
 
 ```bash
 npm install
-npm run dev        # API + Vite dev server with hot reload → http://localhost:5173
+npm run dev        # API + Vite dev server with hot reload → http://localhost:5173 (or the next free port)
 npm test           # unit tests (parsers, categorization, recurring detection, payoff math)
 npm run build      # production build → client/dist
 npm start          # serve the built app → http://localhost:4310
