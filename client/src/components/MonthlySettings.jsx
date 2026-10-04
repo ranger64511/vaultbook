@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download, Save, X } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { Card } from './ui.jsx';
-import MonthPicker from './MonthPicker.jsx';
+import MonthChips from './MonthChips.jsx';
 import { money0, monthLabel, addMonths, currentMonth } from '../lib/format.js';
 
 /** Settings that can differ month to month: expected income, plus a per-month export. */
 export default function MonthlySettings() {
   const { data, mutate } = useData();
   const now = currentMonth();
-  const earliest = useMemo(() => data.transactions.reduce((m, t) => (t.date.slice(0, 7) < m ? t.date.slice(0, 7) : m), addMonths(now, -12)), [data.transactions, now]);
   const [month, setMonth] = useState(now);
   const usual = data.settings.monthlyIncome || 0;
   const overrides = data.settings.incomeByMonth || {};
@@ -19,6 +18,13 @@ export default function MonthlySettings() {
   useEffect(() => { setMonthDraft(override ?? ''); }, [month, override]);
   const txCount = useMemo(() => data.transactions.filter((t) => t.date.startsWith(month)).length, [data.transactions, month]);
   const customMonths = Object.keys(overrides).sort();
+  // Months worth planning: the last 3 months with data, this month, the next 12, and any already customized.
+  const incomeMonths = useMemo(() => {
+    const recent = [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))].filter((m) => m < now).sort().slice(-3);
+    const ahead = Array.from({ length: 13 }, (_, i) => addMonths(now, i));
+    return [...new Set([...recent, ...ahead, ...customMonths])].sort()
+      .map((m) => ({ month: m, detail: overrides[m] != null ? money0(overrides[m]) : undefined }));
+  }, [data.transactions, now, customMonths.join(), overrides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveUsual = () => mutate('/settings', { method: 'PUT', body: { monthlyIncome: Number(usualDraft) || 0 } }, 'Usual income saved');
   const saveMonth = () => mutate('/settings', { method: 'PUT', body: { incomeByMonth: { [month]: monthDraft === '' ? null : Number(monthDraft) } } },
@@ -40,8 +46,9 @@ export default function MonthlySettings() {
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           <div className="spread" style={{ marginBottom: 10 }}>
             <b>{monthLabel(month, 'long')}</b>
-            <MonthPicker value={month} onChange={setMonth} min={earliest} max={addMonths(now, 12)} />
+
           </div>
+          <MonthChips className="bare" items={incomeMonths} isActive={(m) => m === month} onPick={setMonth} label="Months" />
           <div className="field">
             <label htmlFor="month-income">Expected income this month</label>
             <div className="row" style={{ flexWrap: 'nowrap' }}>

@@ -5,7 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Segmented, KindBadge, Modal } from '../components/ui.jsx';
 import { axisProps } from '../components/charts.jsx';
 import { useChartColors } from '../lib/theme.js';
-import MonthPicker from '../components/MonthPicker.jsx';
+import MonthChips from '../components/MonthChips.jsx';
 import { detectRecurring, projectPlannedSavings, plannedStopMonth } from '../lib/analytics.js';
 import { money, money0, moneyCompact, longDate, shortDate, monthLabel, monthShort, currentMonth } from '../lib/format.js';
 
@@ -49,7 +49,12 @@ export default function Recurring() {
     }
     return m;
   }, [all, month]);
-  const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))], [data.transactions]);
+  // Months where recurring charges were billed, with totals, worked out from their history.
+  const billedMonths = useMemo(() => {
+    const m = new Map();
+    for (const r of all) for (const h of r.history) m.set(h.date.slice(0, 7), (m.get(h.date.slice(0, 7)) || 0) + h.amount);
+    return [...new Set([currentMonth(), ...m.keys()])].sort().reverse().map((k) => ({ month: k, detail: m.get(k) ? money0(m.get(k)) : 'in progress' }));
+  }, [all]);
   const byMonth = (rs) => (inMonth ? rs.filter((r) => inMonth.has(r.key)) : rs);
   const lists = {
     review: byMonth(active.filter((r) => !status(r))),
@@ -114,9 +119,9 @@ export default function Recurring() {
           <div className="row" style={{ gap: 10 }}>
             <Segmented label="Months" value={month ? 'month' : 'all'} onChange={(v) => setMonth(v === 'all' ? null : currentMonth())}
               options={[{ value: 'all', label: 'All months' }, { value: 'month', label: 'By month' }]} />
-            {month && <MonthPicker value={month} onChange={setMonth} months={months} />}
           </div>
         </div>
+        {month && <MonthChips items={billedMonths} isActive={(m) => m === month} onPick={setMonth} label="Months with recurring charges" />}
         {month && (
           <div className="period-bar spread">
             <span>

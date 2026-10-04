@@ -4,7 +4,8 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ArrowDownRight, ArrowUpRight, Upload, Wallet, TrendingDown, Scale, CalendarCheck, CalendarClock, Repeat, PiggyBank } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Empty, Amount } from '../components/ui.jsx';
-import MonthPicker from '../components/MonthPicker.jsx';
+import MonthChips from '../components/MonthChips.jsx';
+import { monthsOf, startMonth } from '../lib/months.js';
 import { accountType, interestInfo, assetInfo } from '../lib/accounts.js';
 import { payoffDebts, debtsFrom, mainPlanSettings, runPlan, duration } from '../lib/payoff.js';
 import { ChartTooltip, Legend, axisProps } from '../components/charts.jsx';
@@ -28,8 +29,18 @@ export default function Dashboard() {
   const c = useChartColors();
   const txs = data.transactions;
 
-  const [month, setMonth] = useState(currentMonth);
-  const months = useMemo(() => [...new Set(txs.map((t) => t.date.slice(0, 7)))].sort().reverse(), [txs]);
+  const months = useMemo(() => monthsOf(txs), [txs]);
+  const [month, setMonth] = useState(() => startMonth(months));
+  // Spending per month for the month chips (needs + wants).
+  const spentByMonth = useMemo(() => {
+    const kinds = new Map(data.categories.map((x) => [x.id, x.kind]));
+    const m = new Map();
+    for (const t of txs) {
+      const k = kinds.get(t.category) || 'want';
+      if (k === 'need' || k === 'want') m.set(t.date.slice(0, 7), (m.get(t.date.slice(0, 7)) || 0) - t.amount);
+    }
+    return m;
+  }, [txs, data.categories]);
   const isThisMonth = month === currentMonth();
 
   const monthTx = useMemo(() => txs.filter((t) => t.date.startsWith(month)), [txs, month]);
@@ -102,9 +113,10 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHead title="Dashboard" subtitle={`Your finances at a glance · ${monthLabel(month, 'long')}`}>
-        <MonthPicker value={month} onChange={setMonth} months={months} />
-      </PageHead>
+      <PageHead title="Dashboard" subtitle={`Your finances at a glance · ${monthLabel(month, 'long')}${isThisMonth ? ' (in progress)' : ''}`} />
+      <MonthChips className="bare"
+        items={[...new Set([currentMonth(), ...months])].sort().reverse().map((m) => ({ month: m, detail: spentByMonth.get(m) ? money0(spentByMonth.get(m)) : (m === currentMonth() ? 'in progress' : '$0') }))}
+        isActive={(m) => m === month} onPick={setMonth} label="Months" />
 
       <div className="grid g-4">
         <Stat icon={Scale} label="Net worth" value={<span className={worth.net >= 0 ? 'pos' : 'bad'}>{money0(worth.net)}</span>}

@@ -6,7 +6,8 @@ import {
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Modal, Stat } from '../components/ui.jsx';
 import { money, money0, pct, longDate, monthLabel, currentMonth } from '../lib/format.js';
-import MonthPicker from '../components/MonthPicker.jsx';
+import MonthChips from '../components/MonthChips.jsx';
+import { monthsOf, startMonth } from '../lib/months.js';
 import { ACCOUNT_TYPES, ACCOUNT_GROUPS, accountType, typeLabel, earnsInterest, interestInfo, isDebt, isInvestment, isAsset, assetInfo, hasTransactions, balanceAtMonthEnd, monthActivity } from '../lib/accounts.js';
 
 const ICON = {
@@ -199,8 +200,13 @@ export default function Accounts() {
   const yearly = [...interest.values()].reduce((s, i) => s + (i?.yearly || 0), 0);
 
   // Month view: activity per account and (for past months) estimated month-end balances.
-  const [month, setMonth] = useState(currentMonth);
-  const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))], [data.transactions]);
+  const months = useMemo(() => monthsOf(data.transactions), [data.transactions]);
+  const [month, setMonth] = useState(() => startMonth(months));
+  const txCountByMonth = useMemo(() => {
+    const m = new Map();
+    for (const t of data.transactions) m.set(t.date.slice(0, 7), (m.get(t.date.slice(0, 7)) || 0) + 1);
+    return m;
+  }, [data.transactions]);
   const past = month < currentMonth();
   const endLabel = `end of ${monthLabel(month, 'long')}`;
   const monthRows = useMemo(() => data.accounts.filter((a) => hasTransactions(a.type)).map((a) => ({
@@ -225,7 +231,6 @@ export default function Accounts() {
   return (
     <>
       <PageHead title="Accounts" subtitle="Bank accounts, savings, investments, property, credit cards and loans.">
-        {data.accounts.length > 0 && <MonthPicker value={month} onChange={setMonth} months={months} />}
         <button className="btn primary" onClick={() => setEditing('new')}><Plus size={16} /> Add account</button>
       </PageHead>
 
@@ -249,6 +254,7 @@ export default function Accounts() {
           subtitle={past
             ? 'Money in and out during the month, and each balance at month end (worked back from today’s balance and the transactions since).'
             : 'Money in and out so far this month, and current balances.'}>
+          <MonthChips items={months.map((m) => ({ month: m, detail: txCountByMonth.get(m) }))} isActive={(m) => m === month} onPick={setMonth} label="Months with activity" />
           <div className="table-wrap">
             <table>
               <thead><tr>

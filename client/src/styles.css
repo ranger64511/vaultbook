@@ -293,3 +293,4 @@ tr.dim-soft td { opacity: 0.6; }
 .month-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .month-strip.bare { padding: 0 0 14px; border-bottom: 0; }
 .budget-month { margin: -6px 0 10px; }
+tr.schedule-row { cursor: pointer; }
