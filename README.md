@@ -100,6 +100,10 @@ Adding or editing an extra payment opens a popup. Here, a yearly bonus with half
 
 <img src="docs/screenshots/payoff-theory-popup.webp" alt="Payoff theory: add bonus popup" width="900">
 
+**Apply to main plan** asks you to confirm and lists exactly what your main plan will become, with the planning-only reminder:
+
+<img src="docs/screenshots/payoff-theory-apply.webp" alt="Payoff theory: apply to main plan confirmation" width="900">
+
 ### Settings
 Security, appearance, monthly expected income, encrypted backup, household mode, and categorization rules.
 
