@@ -42,6 +42,8 @@ const PAGES = [
   { name: 'budget', path: '/budget', height: 1250, chip: 1 },
   { name: 'payoff', path: '/payoff', height: 1350 },
   { name: 'payoff-theory', path: '/payoff/theory', height: 1450 },
+  // The "+ Bonus" popup; it's closed again without saving, so the demo data is untouched.
+  { name: 'payoff-theory-popup', path: '/payoff/theory', height: 900, open: 'button[title^="Work bonus"]' },
   { name: 'settings', path: '/settings', height: 1150 },
 ];
 const WIDTH = 1440;
@@ -84,7 +86,13 @@ try {
         await page.evaluate((i) => document.querySelectorAll('.month-chip')[i]?.click(), p.chip);
         await page.evaluate(() => window.scrollTo(0, 0));
       }
+      if (p.open) {
+        await page.click(p.open);
+        await page.waitForSelector('dialog[open]');
+        await page.evaluate(() => document.activeElement?.blur()); // no focus ring in the picture
+      }
       await shoot(page, `${p.name}${theme === 'dark' ? '-dark' : ''}.webp`, p.height);
+      if (p.open) await page.keyboard.press('Escape');
     }
   }
   await page.evaluate(() => {

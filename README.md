@@ -96,6 +96,10 @@ Try what-ifs (bonuses, raises, lump sums, investment withdrawals) as autosaved t
 
 <img src="docs/screenshots/payoff-theory.webp" alt="Payoff theory" width="900">
 
+Adding or editing an extra payment opens a popup. Here, a yearly bonus with half of it going toward debt:
+
+<img src="docs/screenshots/payoff-theory-popup.webp" alt="Payoff theory: add bonus popup" width="900">
+
 ### Settings
 Security, appearance, monthly expected income, encrypted backup, household mode, and categorization rules.
 
