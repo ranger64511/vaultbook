@@ -114,3 +114,78 @@ export function monthActivity(acct, transactions, month) {
   }
   return out;
 }
+
+// ------------------------------------------------------------ coverage ---
+const monthOf = (iso) => iso.slice(0, 7);
+function monthsBetweenKeys(a, b) {
+  const out = [];
+  let y = Number(a.slice(0, 4)), m = Number(a.slice(5, 7));
+  while (`${y}-${String(m).padStart(2, '0')}` <= b && out.length < 600) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    if (++m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/**
+ * Works out, per account, which months have transactions, which are missing, and
+ * how up to date it is. Returns { months: ['YYYY-MM', ...], accounts: [...] }.
+ */
+export function statementCoverage(accounts, transactions, today = isoDate(new Date())) {
+  const byAccount = new Map();
+  for (const t of transactions) {
+    let s = byAccount.get(t.accountId);
+    if (!s) byAccount.set(t.accountId, (s = { counts: new Map(), first: t.date, last: t.date }));
+    s.counts.set(monthOf(t.date), (s.counts.get(monthOf(t.date)) || 0) + 1);
+    if (t.date < s.first) s.first = t.date;
+    if (t.date > s.last) s.last = t.date;
+  }
+  const thisMonth = monthOf(today);
+  const firsts = [...byAccount.values()].map((s) => monthOf(s.first));
+  const start = firsts.length ? firsts.sort()[0] : thisMonth;
+  const months = monthsBetweenKeys(start, thisMonth);
+  const DAY = 86400000;
+  const rows = accounts.filter((a) => hasTransactions(a.type)).map((a) => {
+    const s = byAccount.get(a.id);
+    if (!s) return { account: a, empty: true, cells: months.map((m) => ({ month: m, count: 0, state: 'none' })), gaps: [] };
+    const own = monthsBetweenKeys(monthOf(s.first), thisMonth);
+    // A month is a gap if it has no transactions but sits between months that do.
+    const gaps = own.filter((m) => !s.counts.get(m) && m < monthOf(s.last));
+    const daysSince = Math.round((new Date(today) - new Date(s.last)) / DAY);
+    return {
+      account: a,
+      first: s.first,
+      last: s.last,
+      daysSince,
+      gaps,
+      stale: daysSince > 35,
+      cells: months.map((m) => {
+        const count = s.counts.get(m) || 0;
+        let state = 'none';
+        if (count) state = 'covered';
+        else if (gaps.includes(m)) state = 'gap';
+        else if (m > monthOf(s.last)) state = 'pending';
+        return { month: m, count, state };
+      }),
+    };
+  });
+  return { months, accounts: rows };
+}
+
+/**
+ * How a statement's rows relate to what's already imported for its account:
+ * the period it covers, months it adds, gaps it fills, and months it overlaps.
+ */
+export function describeStatementPeriod(rows, accountId, transactions) {
+  const dates = rows.map((r) => r.date).filter(Boolean).sort();
+  if (!dates.length) return null;
+  const from = dates[0], to = dates[dates.length - 1];
+  const fileMonths = monthsBetweenKeys(monthOf(from), monthOf(to));
+  const existing = new Set(transactions.filter((t) => t.accountId === accountId).map((t) => monthOf(t.date)));
+  const existingSorted = [...existing].sort();
+  const firstHave = existingSorted[0], lastHave = existingSorted[existingSorted.length - 1];
+  const overlaps = fileMonths.filter((m) => existing.has(m));
+  const newMonths = fileMonths.filter((m) => !existing.has(m));
+  const fillsGaps = newMonths.filter((m) => firstHave && m > firstHave && m < lastHave);
+  return { from, to, months: fileMonths, overlaps, newMonths, fillsGaps, firstImport: !existing.size };
+}

@@ -64,3 +64,32 @@ test('month-end balances are worked back from the current balance', () => {
   assert.deepEqual(balanceAtMonthEnd({ id: 'h', type: 'home', balance: 300000 }, txs, '2026-09', '2026-10-03'), { balance: 300000, estimated: false });
   assert.deepEqual(monthActivity(checking, txs, '2026-10'), { in: 2000, out: 50, count: 2 });
 });
+
+import { statementCoverage, describeStatementPeriod } from './accounts.js';
+
+test('statement coverage: covered months, gaps and staleness', () => {
+  const accounts = [{ id: 'c', type: 'checking' }, { id: 'h', type: 'home' }, { id: 'n', type: 'savings' }];
+  const txs = [
+    { accountId: 'c', date: '2026-06-03', amount: -5 },
+    { accountId: 'c', date: '2026-08-10', amount: -5 },
+    { accountId: 'c', date: '2026-08-20', amount: -5 },
+  ];
+  const cov = statementCoverage(accounts, txs, '2026-10-04');
+  assert.deepEqual(cov.months, ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+  assert.equal(cov.accounts.length, 2); // property has no statements
+  const c = cov.accounts[0];
+  assert.deepEqual(c.gaps, ['2026-07']);
+  assert.deepEqual(c.cells.map((x) => x.state), ['covered', 'gap', 'covered', 'pending', 'pending']);
+  assert.equal(c.stale, true);
+  assert.equal(cov.accounts[1].empty, true);
+});
+
+test('statement period: new months, filled gaps and overlap', () => {
+  const txs = [{ accountId: 'c', date: '2026-06-03' }, { accountId: 'c', date: '2026-08-10' }];
+  const p = describeStatementPeriod([{ date: '2026-07-02' }, { date: '2026-08-15' }, { date: '2026-07-20' }], 'c', txs);
+  assert.equal(p.from, '2026-07-02');
+  assert.equal(p.to, '2026-08-15');
+  assert.deepEqual(p.fillsGaps, ['2026-07']);
+  assert.deepEqual(p.overlaps, ['2026-08']);
+  assert.equal(describeStatementPeriod([{ date: '2026-09-01' }], 'x', txs).firstImport, true);
+});

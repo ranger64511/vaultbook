@@ -5,7 +5,9 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Amount, CategorySelect } from '../components/ui.jsx';
 import { AccountForm } from './Accounts.jsx';
 import { money, shortDate, longDate } from '../lib/format.js';
-import { typeLabel, isDebt, hasTransactions } from '../lib/accounts.js';
+import { typeLabel, isDebt, hasTransactions, describeStatementPeriod } from '../lib/accounts.js';
+import StatementCoverage from '../components/StatementCoverage.jsx';
+import { monthLabel } from '../lib/format.js';
 
 export default function Import() {
   const { data, mutate, notify, accountsById } = useData();
@@ -21,6 +23,10 @@ export default function Import() {
   const [keepFile, setKeepFile] = useState(true);
   const inputRef = useRef(null);
   const account = accountsById.get(accountId);
+  // What this statement covers, compared with what's already imported for the account.
+  const period = useMemo(() => (preview ? describeStatementPeriod(rows.filter((r) => r.include), accountId, data.transactions) : null),
+    [preview, rows, accountId, data.transactions]);
+  const monthList = (ms) => ms.map((m) => monthLabel(m, 'short')).join(', ');
 
   const showPreview = (p) => {
     setPreview(p);
@@ -170,6 +176,16 @@ export default function Import() {
               <button className="btn primary" onClick={commit} disabled={busy || !included.length}><CheckCircle2 size={16} /> Import {included.length}</button>
             </div>}>
             <div className="stack" style={{ gap: 10 }}>
+              {period && (
+                <div className="info-box">
+                  <b>Covers {longDate(period.from)} – {longDate(period.to)}</b> ({period.months.length} month{period.months.length === 1 ? '' : 's'}).{' '}
+                  {period.firstImport ? <>This is the first statement for {account?.name}.</> : <>
+                    {period.fillsGaps.length > 0 && <>Fills a gap: <b>{monthList(period.fillsGaps)}</b>. </>}
+                    {period.newMonths.filter((m) => !period.fillsGaps.includes(m)).length > 0 && <>Adds {monthList(period.newMonths.filter((m) => !period.fillsGaps.includes(m)))}. </>}
+                    {period.overlaps.length > 0 && <>Overlaps months you already have ({monthList(period.overlaps)}); matching transactions are skipped as duplicates.</>}
+                  </>}
+                </div>
+              )}
               {preview.warnings.map((w) => <div key={w} className="warn-box">{w}</div>)}
               {dupes > 0 && <div className="info-box">{dupes} row{dupes === 1 ? ' looks' : 's look'} already imported and {dupes === 1 ? 'was' : 'were'} unchecked.</div>}
               {preview.uploadId && (
@@ -235,6 +251,8 @@ export default function Import() {
           </Card>
         </div>
       )}
+
+      {!preview && <StatementCoverage onPick={(id) => { setAccountId(id); setNewAccount(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
 
       {!preview && data.imports.length > 0 && (
         <Card className="mt flush" title="Import history">
