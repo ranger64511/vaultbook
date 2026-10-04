@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Wand2, Plus, Save, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
 import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Stat, Modal } from '../components/ui.jsx';
-import MonthPicker from '../components/MonthPicker.jsx';
+import MonthChips from '../components/MonthChips.jsx';
 import { useChartColors, STATUS } from '../lib/theme.js';
 import { summarize } from '../lib/analytics.js';
 import { money0, monthLabel, addMonths, currentMonth, pct } from '../lib/format.js';
@@ -11,7 +11,27 @@ export default function Budget() {
   const { data, mutate } = useData();
   const c = useChartColors();
   const months = useMemo(() => [...new Set(data.transactions.map((t) => t.date.slice(0, 7)))].sort().reverse(), [data.transactions]);
-  const [month, setMonth] = useState(currentMonth);
+  // Spending per month, worked out from the transactions (needs + wants only).
+  const spentByMonth = useMemo(() => {
+    const kinds = new Map(data.categories.map((x) => [x.id, x.kind]));
+    const m = new Map();
+    for (const t of data.transactions) {
+      const k = kinds.get(t.category) || 'want';
+      if (k === 'need' || k === 'want') m.set(t.date.slice(0, 7), (m.get(t.date.slice(0, 7)) || 0) - t.amount);
+    }
+    return m;
+  }, [data.transactions, data.categories]);
+  // Open on this month if it has spending yet, otherwise the latest month that does.
+  const [month, setMonth] = useState(() => (spentByMonth.get(currentMonth()) ? currentMonth() : (months[0] || currentMonth())));
+  const chipMonths = [...new Set([currentMonth(), ...months])].sort().reverse()
+    .map((m) => ({ month: m, detail: spentByMonth.get(m) ? money0(spentByMonth.get(m)) : (m === currentMonth() ? 'in progress' : '$0') }));
+  // How far through the month we are, to judge spending pace in the current month.
+  const progress = (() => {
+    if (month !== currentMonth()) return null;
+    const d = new Date();
+    const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return { day: d.getDate(), days };
+  })();
   const [cats, setCats] = useState(data.categories);
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) setCats(data.categories); }, [data.categories, dirty]);
@@ -58,6 +78,17 @@ export default function Budget() {
   const monthIncome = data.settings.incomeByMonth?.[month];
   const baseIncome = monthIncome ?? (data.settings.monthlyIncome || income || avgIncome);
   const leftover = baseIncome - sum.spending;
+  // Current month: assume each category ends at least at its usual (3-month average)
+  // amount, and anything already above that stays as spent. A rent payment on the 1st
+  // counts once, and categories you haven't spent in yet are filled in from your usual.
+  const projected = (() => {
+    if (!progress || progress.day >= progress.days || sum.spending <= 0) return null;
+    if (!avg3.size) return progress.day >= 10 ? (sum.spending / progress.day) * progress.days : null;
+    const ids = new Set([...spent.keys(), ...avg3.keys()]);
+    let total = 0;
+    for (const id of ids) total += Math.max(spent.get(id) || 0, Math.max(0, avg3.get(id) || 0));
+    return total;
+  })();
 
   const split = baseIncome > 0 ? [
     { label: 'Needs', value: sum.needs, target: 50, color: c.series[0] },
@@ -112,16 +143,23 @@ export default function Budget() {
   return (
     <>
       <PageHead title="Budget" subtitle="Set a monthly amount per category. Needs are essentials; wants are places to cut.">
-        <MonthPicker value={month} onChange={setMonth} months={months} />
         <button className="btn" onClick={suggest} title="Set each budget to your 3-month average"><Wand2 size={16} /> Suggest from history</button>
         <button className="btn" onClick={() => setAdding(true)}><Plus size={16} /> Category</button>
         <button className="btn primary" onClick={save} disabled={!dirty}><Save size={16} /> Save</button>
       </PageHead>
 
+      <div className="spread budget-month">
+        <h2>{monthLabel(month, 'long')}{progress && <span className="badge warn" style={{ marginLeft: 8, verticalAlign: 2 }}>In progress · day {progress.day} of {progress.days}</span>}</h2>
+      </div>
+      <MonthChips items={chipMonths} isActive={(m) => m === month} onPick={setMonth} label="Budget months" className="bare" />
+
       <div className="grid g-4">
         <Stat label="Income" value={money0(baseIncome)} sub={monthIncome != null ? 'Expected for this month (Settings)' : data.settings.monthlyIncome ? 'Usual expected income (Settings)' : income ? 'Received this month' : avgIncome ? '3-month average' : 'Set expected income in Settings'} />
         <Stat label="Budgeted" value={money0(totalBudget)} sub={`Needs ${money0(needsBudget)} · Wants ${money0(totalBudget - needsBudget)}`} />
-        <Stat label="Spent" value={money0(sum.spending)} sub={totalBudget ? `${pct((sum.spending / totalBudget) * 100)} of budget` : 'No budget set yet'} />
+        <Stat label="Spent" value={money0(sum.spending)}
+          sub={projected != null
+            ? <>Heading for about <b>{money0(projected)}</b> if the rest of the month is typical{totalBudget ? ` (budget ${money0(totalBudget)})` : ''}</>
+            : totalBudget ? `${pct((sum.spending / totalBudget) * 100)} of budget` : 'No budget set yet'} />
         <Stat label="Left over" value={<span className={leftover >= 0 ? 'pos' : 'bad'}>{money0(leftover)}</span>} sub={leftover > 0 ? 'Available for card payoff & savings' : 'Spending exceeds income'} />
       </div>
 

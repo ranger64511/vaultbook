@@ -5,6 +5,7 @@ import { useData } from '../DataContext.jsx';
 import { PageHead, Card, Empty, Amount, Modal, Segmented, CategorySelect } from '../components/ui.jsx';
 import { money, monthLabel, weekKey, weekLabel, shortDate, isoDate, dayLabel, toDate } from '../lib/format.js';
 import { kindOf } from '../lib/analytics.js';
+import MonthChips from '../components/MonthChips.jsx';
 import { hasTransactions } from '../lib/accounts.js';
 
 const PAGE = 400;
@@ -178,19 +179,12 @@ export default function Transactions() {
           </div>
         )}
 
-        {monthCounts.length > 1 && (
-          <div className="month-strip" role="navigation" aria-label="Months with transactions">
-            {monthCounts.map(([m, n]) => {
-              const active = view === 'all' ? false : (range && m >= range[0].slice(0, 7) && m <= range[1].slice(0, 7));
-              return (
-                <button key={m} className={`month-chip${active ? ' active' : ''}`} aria-pressed={!!active}
-                  onClick={() => { if (view === 'all') setView('month'); goToMonth(m); }}>
-                  {monthLabel(m, 'short')} <span className="faint">· {n}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <MonthChips
+          items={monthCounts.map(([m, n]) => ({ month: m, detail: n }))}
+          isActive={(m) => view !== 'all' && range && m >= range[0].slice(0, 7) && m <= range[1].slice(0, 7)}
+          onPick={(m) => { if (view === 'all') setView('month'); goToMonth(m); }}
+          label="Months with transactions"
+        />
 
         {!filtered.length ? (
           <Empty icon={ReceiptText} title={data.transactions.length ? (view === 'all' ? 'No transactions' : `Nothing ${view === 'day' ? (isCurrent ? 'today' : 'on this day') : `in this ${view}`}`) : 'No transactions'}

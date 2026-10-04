@@ -291,3 +291,5 @@ tr.dim-soft td { opacity: 0.6; }
 .month-chip { flex: none; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; }
 .month-chip:hover { background: var(--surface-hover); color: var(--text); }
 .month-chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.month-strip.bare { padding: 0 0 14px; border-bottom: 0; }
+.budget-month { margin: -6px 0 10px; }
