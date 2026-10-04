@@ -38,6 +38,12 @@ const PAGES = [
   { name: 'transactions', path: '/transactions', height: 1000, chip: 1, setup: () => localStorage.setItem('tx-view', 'month') },
   { name: 'import', path: '/import', height: 1250 },
   { name: 'accounts', path: '/accounts', height: 1550, chip: 1 },
+  // "Add account" popup filled in with an example savings account (never saved: closed with Escape).
+  {
+    name: 'accounts-add', path: '/accounts', height: 900, openText: 'Add account',
+    fill: [['select', 'savings'], ['input[placeholder^="e.g. High-Yield"]', 'High-Yield Savings'], ['input[placeholder="Optional"]', 'Acme Online Bank'],
+      ['input[placeholder="0.00"]', '12000'], ['input[placeholder="e.g. 4.25"]', '4.2']],
+  },
   { name: 'recurring', path: '/recurring', height: 1250 },
   // "Plan to cancel" popup for the first charge to review; closed with Escape, nothing is planned.
   { name: 'recurring-plan-cancel', path: '/recurring', height: 900, openText: 'Plan to cancel' },
@@ -96,6 +102,20 @@ try {
           await page.evaluate((text) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === text && !b.disabled)?.click(), p.openText);
         }
         await page.waitForSelector('dialog[open]');
+        if (p.fill) {
+          // Fill fields the way React expects (native setter + input/change event).
+          await page.evaluate((fields) => {
+            const dlg = document.querySelector('dialog[open]');
+            for (const [sel, value] of fields) {
+              const el = dlg.querySelector(sel);
+              if (!el) continue;
+              const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+              Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+              el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+            }
+          }, p.fill);
+          await settle(300);
+        }
         await page.evaluate(() => document.activeElement?.blur()); // no focus ring in the picture
       }
       await shoot(page, `${p.name}${theme === 'dark' ? '-dark' : ''}.webp`, p.height);

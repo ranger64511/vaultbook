@@ -76,6 +76,10 @@ Bank & cash, investments, property & assets (with equity against linked loans), 
 
 <img src="docs/screenshots/accounts.webp" alt="Accounts" width="900">
 
+**Add account** shows only the fields that fit the account type. For a savings account, enter the APY and see what it earns as you type:
+
+<img src="docs/screenshots/accounts-add.webp" alt="Accounts: add account popup" width="900">
+
 ### Recurring charges
 Subscriptions and bills found automatically. Plan which to cancel (you cancel them yourself) and see the savings month by month.
 
